@@ -55,6 +55,10 @@ class whole_genome_alignment(object):
         self.lastdb = self.args.lastdb
         self.last_train = self.args.last_train
         self.lastal = self.args.lastal
+        self.lw = lw.last_wga
+
+    def lastdb(self):
+        lw.last_wga
 
 
 

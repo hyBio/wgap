@@ -23,8 +23,11 @@ class wga_in_one_step(object):
         self.parser = argparse.ArgumentParser(
             prog='wga_in_one_step',
             description=description)
+        self.parser.add_argument('-b', '--begin', default="fasta_swap", help='the begin subprocess of the pipeline\n'+
+                                                                             'default: fasta_swap\n'+
+                                                                             'optional parameters:fasta_download\tfasta_swap\tlastdb\tlast_train\tlastal\tmultiz')
         self.parser.add_argument('-t', '--threads', type=int, default=1, help='number of threads')
-        self.parser.add_argument('-c', '--configure', help='configure file path', required=False)
+        self.parser.add_argument('-c', '--configure', help='configure file path')
         self.parser.add_argument('-f', '--fa_dir', help='fasta file directory',default=os.getcwd())
         self.parser.add_argument('-r', '--ref_fa', help='reference fasta file')
         self.parser.add_argument('-e', '--exclude_fa', help='exclude fasta file')
@@ -48,6 +51,7 @@ class whole_genome_alignment(object):
 
     def __init__(self,args):
         self.args = args
+        self.begin = args.begin
         self.threads = self.args.threads
         self.configure = self.args.configure
         self.fa_dir = self.args.fa_dir
@@ -58,10 +62,36 @@ class whole_genome_alignment(object):
         self.last_train = self.args.last_train
         self.lastal = self.args.lastal
 
-        self.fasta_swap()
-        # self.lastdb_func()
-        # self.last_train_func()
-        # self.lastal_func()
+        if self.begin == "fasta_download":
+            self.fasta_download()
+            self.fasta_swap()
+            self.lastdb_func()
+            self.last_train_func()
+            self.lastal_func()
+            self.multiz_func()
+        elif self.begin == "fasta_swap":
+            self.fasta_swap()
+            self.lastdb_func()
+            self.last_train_func()
+            self.lastal_func()
+            self.multiz_func()
+        elif self.begin == "lastdb":
+            self.lastdb_func()
+            # self.last_train_func()
+            # self.lastal_func()
+            # self.multiz_func()
+        elif self.begin == "last_train":
+            self.last_train_func()
+            # self.lastal_func()
+            # self.multiz_func()
+        elif self.begin == "lastal":
+            self.lastal_func()
+            self.multiz_func()
+        elif self.begin == "multiz":
+            self.multiz_func()
+        else:
+            print("Incorrect parameter '{}' given to whole_genome_alignmen, please check the help".format(self.begin))
+
 
     def fasta_swap(self):
         sp.Popen(shlex.split("mkdir -p {}/00_assembly_fasta".format(self.out_dir)))
@@ -73,131 +103,150 @@ class whole_genome_alignment(object):
             self.fna_gz = line.split('\t')[0].strip()
             self.name = line.split('\t')[1].strip()
 
-            sys.stdout = open("{}/00_assembly_fasta/{}_logfile".format(self.out_dir,self.name), "w")
+            sys.stdout = open("{}/00_assembly_fasta/{}_logfile".format(self.out_dir,self.name), "w", encoding='utf-8')
             sys.stdout.write("\nargparse:{}\n".format(self.args))
             sys.stdout.write("\nrunning directory:{}\n".format(self.out_dir))
-            sys.stdout.write(" ".join(['\nrunning command line:', 'cat', '"{}"'.format(self.fna_gz), '|', 'gunzip', '|', 'awk', '-F', '\'\t\'', '\'{print $1}\'', '|', 'sed', '\'s/>/>{}_/g\''.format(self.name), '>', '{}/00_assembly_fasta/{}.fa\n'.format(self.out_dir,self.name)]))
+            sys.stdout.write(" ".join(['\nrunning command line:', 'zcat', '{}'.format(self.fna_gz),'|', 'awk', '\'{print $1}\'', '|', 'sed', '\'s/>/>{}_/g\''.format(self.name), '>', '{}/00_assembly_fasta/{}.fa\n'.format(self.out_dir,self.name)]))
             sys.stdout.flush()
 
-            self.sp_ungzip = sp.Popen(['cat', '"{}"'.format(self.fna_gz), '|', 'gunzip', '|', 'awk', '-F', '\t', '{print $1}', '|', 'sed', 's/>/>{}_/g'.format(self.name)], stdout=sp.PIPE)
-            for fa_line in self.sp_ungzip.stdout:
-                fa_line = line.decode('utf-8')
-                with open('{}/00_assembly_fasta/{}.fa'.format(self.out_dir,self.name), 'a') as fa:
-                    fa.write(line)
-            self.sp_ungzip.stdout.flush()
-            self.sp_ungzip.communicate()
+            self.sp_ungzip = sp.Popen(["zcat", "{}".format(self.fna_gz)], stdout=sp.PIPE)
+            self.sp_awk = sp.Popen(shlex.split("awk '{print $1}'"), stdin=self.sp_ungzip.stdout, stdout=sp.PIPE)
             self.sp_ungzip.stdout.close()
+            self.sp_sed = sp.Popen(shlex.split("sed 's/>/>{}_/g'".format(self.name)), stdin=self.sp_awk.stdout, stdout=sp.PIPE)
+            self.sp_awk.stdout.close()
+            fasta_swap_1_output = self.sp_sed.communicate()[0]
+            with open('{}/00_assembly_fasta/{}.fa'.format(self.out_dir,self.name), 'a', encoding='utf-8') as fa:
+                fa.write(fasta_swap_1_output.decode('UTF-8').strip() + '\n')
+            self.sp_sed.stdout.close()
 
-            if self.sp_ungzip.returncode == 0:
+            if self.sp_sed.returncode == 0:
                 sys.stdout.write("\nfasta_swap_1 successfully finished\n")
                 sys.stdout.write("\nrunning command line:samtools faidx -@ {} {}/00_assembly_fasta/{}.fa\n".format(self.threads, self.out_dir, self.name))
                 sys.stdout.flush()
                 self.sp_faidx = sp.Popen(shlex.split("samtools faidx {}/00_assembly_fasta/{}.fa".format(self.out_dir,self.name)), stdout=sp.PIPE)
-                for fai_line in self.sp_faidx.stdout:
-                    fai_line = line.decode('utf-8')
-                    with open('{}/00_assembly_fasta/{}.fa.fai'.format(self.out_dir,self.name), 'a') as fai:
-                        fai.write(line)
-                self.sp_faidx.stdout.flush()
-                self.sp_faidx.communicate()
+                fasta_swap_2_output = self.sp_faidx.communicate()[0]
+                with open('{}/00_assembly_fasta/{}.fa.fai'.format(self.out_dir,self.name), 'a', encoding='utf-8') as fai:
+                    fai.write(fasta_swap_2_output.decode('UTF-8').strip() + '\n')
                 self.sp_faidx.stdout.close()
-
 
                 if self.sp_faidx.returncode == 0:
                     sys.stdout.write("\nfasta_swap_2 successfully finished\n")
+                    sys.stdout.flush()
+                    sys.stdout.close()
+                    return(0)
                 else:
                     sys.stdout.write("\nfasta_swap_2 failed\n")
+                    sys.stdout.flush()
+                    sys.stdout.close()
+                    return(1)
             else:
                 sys.stdout.write("\nfasta_swap_1 failed\n")
-            sys.stdout.flush()
-            sys.stdout.close()
+                sys.stdout.flush()
+                sys.stdout.close()
+                return(1)
 
 
     def lastdb_func(self):
-        sp.Popen(shlex.split("mkdir -p {}/00_lastdb".format(self.out_dir)))
-        sp.Popen(shlex.split("cd {}/00_lastdb/".format(self.out_dir)))
+        sp.Popen(shlex.split("mkdir -p {}/01_lastdb".format(self.out_dir)))
+        sp.Popen(shlex.split("cd {}/01_lastdb/".format(self.out_dir)))
 
-        sys.stdout = open("{}/00_lastdb/logfile".format(self.out_dir), "w")
+        sys.stdout = open("{}/01_lastdb/logfile".format(self.out_dir), "w", encoding='utf-8')
         sys.stdout.write("\nargparse:{}\n".format(self.args))
         sys.stdout.write("\nrunning directory:{}\n".format(self.out_dir))
-        sys.stdout.write("\nrunning command line:lastdb -P {} {}\n".format(self.threads, self.lastdb))
+        sys.stdout.write("\nrunning command line:lastdb -P {} {} {}_db {}/00_assembly_fasta/{}.fa\n".format(self.threads, self.lastdb, self.ref_fa, self.out_dir, self.ref_fa))
         sys.stdout.flush()
 
-        os.chdir(r"{}/00_lastdb/".format(self.out_dir))
-        self.sp = sp.Popen(shlex.split("lastdb -P {} {}".format(self.threads, self.lastdb)), stdout=sp.PIPE, stderr=sp.PIPE)
+        os.chdir(r"{}/01_lastdb/".format(self.out_dir))
+        sp_lastdb_cmd = "lastdb -P {} ".format(self.threads) + self.lastdb + " " + self.ref_fa + '_db ' + self.out_dir + '/00_assembly_fasta/' + self.ref_fa + '.fa'
+        self.sp_lastdb = sp.Popen(shlex.split(sp_lastdb_cmd), stdout=sp.PIPE, stderr=sp.PIPE)
         # wiat for the process to finish
-        self.sp.communicate()
+        self.sp_lastdb.communicate()
         # check lastdb return code
-        if self.sp.returncode == 0:
-            sys.stdout = open("{}/00_lastdb/logfile".format(self.out_dir), "a")
+        if self.sp_lastdb.returncode == 0:
+            sys.stdout = open("{}/01_lastdb/logfile".format(self.out_dir), "a", encoding='utf-8')
             sys.stdout.write("\nlastdb successfully finished\n")
             sys.stdout.flush()
+            return(0)
         else:
-            sys.stdout = open("{}/00_lastdb/err.file".format(self.out_dir), "a")
-            sys.stdout.write("\nerror:lastdb failed\n"+"lastdb error message:\n")
-            for stdout_line in iter(self.sp.stderr.readline, b''):
-                sys.stdout.write(stdout_line.decode('utf-8'))
+            sys.stdout = open("{}/01_lastdb/logfile".format(self.out_dir), "a", encoding='utf-8')
+            sys.stdout.write("\nerror:lastdb failed\n"+"\nlastdb error message:\n")
             sys.stdout.flush()
 
-            self.sp_help = sp.Popen(shlex.split("lastdb --help"), stdout=sp.PIPE, stderr=sp.PIPE)
-            sys.stdout = open("{}/00_lastdb/err.file".format(self.out_dir), "a")
-            for stdout_line in iter(self.sp_help.stderr.readline, b''):
-                sys.stdout.write(stdout_line.decode('utf-8'))
-            sys.stdout.flush()
+            sys.stderr = open("{}/01_lastdb/logfile".format(self.out_dir), "a", encoding='utf-8')
+            sys.stderr.write(self.sp_lastdb.communicate()[1].decode('UTF-8'))
+            sys.stderr.flush()
 
+            self.sp_lastdb_help = sp.Popen(shlex.split("lastdb --help"), stdout=sp.PIPE, stderr=sp.PIPE)
+            with open("{}/01_lastdb/logfile".format(self.out_dir), "a") as f:
+                f.write(self.sp_lastdb_help.stdout.read().decode('UTF-8'))
+                f.write(self.sp_lastdb_help.stderr.read().decode('UTF-8'))
+            self.sp_lastdb_help.stdout.close()
+            self.sp_lastdb_help.stderr.close()
+            return(1)
 
 
     def last_train_func(self):
-        sp.Popen(shlex.split("mkdir -p {}/01_last_train".format(self.out_dir)))
-        sp.Popen(shlex.split("cd {}/01_last_train/".format(self.out_dir)))
+        sp.Popen(shlex.split("mkdir -p {}/02_last_train".format(self.out_dir)))
+        sp.Popen(shlex.split("cd {}/02_last_train/".format(self.out_dir)))
+        os.chdir(r"{}/02_last_train/".format(self.out_dir))
 
-        sys.stdout = open("{}/01_last_train/logfile".format(self.out_dir), "w")
-        sys.stdout.write("\nargparse:{}\n".format(self.args))
-        sys.stdout.write("\nrunning directory:{}\n".format(self.out_dir))
-        sys.stdout.write("\nrunning command line:last-train {} {}\n".format(self.last_train, self.ref_fa))
-        sys.stdout.flush()
+        with open(self.configure, 'r') as f:
+            lines = f.readlines()
+        for line in lines:
+            self.name = line.split('\t')[1].strip()
+            if self.name != self.ref_fa:
+                sys.stdout = open("{}/02_last_train/{}_logfile".format(self.out_dir,self.name), "w", encoding='utf-8')
+                sys.stdout.write("\nargparse:{}\n".format(self.args))
+                sys.stdout.write("\nrunning directory:{}\n".format(self.out_dir))
+                sys.stdout.write("\nrunning command line:last-train -P {} {} {}/01_lastdb/{}_db {}/00_assembly_fasta/{}.fa > {}/02_last_train/{}.mat\n".format(self.threads, self.last_train, self.out_dir, self.ref_fa, self.out_dir, self.name, self.out_dir, self.name))
+                sys.stdout.flush()
 
-        os.chdir(r"{}/01_last_train/".format(self.out_dir))
-        self.sp = sp.Popen(shlex.split("last-train {} {}".format(self.last_train, self.ref_fa)), stdout=sp.PIPE, stderr=sp.PIPE)
-        # wiat for the process to finish
-        self.sp.communicate()
-        # check lastdb return code
-        if self.sp.returncode == 0:
-            sys.stdout = open("{}/01_last_train/logfile".format(self.out_dir), "a")
-            sys.stdout.write("\nlast-train successfully finished\n")
-            sys.stdout.flush()
-        else:
-            sys.stdout = open("{}/01_last_train/logfile".format(self.out_dir), "a")
-            sys.stdout.write("\nerror:last-train failed\n"+"last-train error message:\n")
-            for stdout_line in iter(self.sp.stderr.readline, b''):
-                sys.stdout.write(stdout_line.decode('utf-8'))
-            sys.stdout.flush()
+                sp_last_train_cmd = "last-train -P {} ".format(self.threads) + self.last_train + " " + self.out_dir + "/01_lastdb/" + self.ref_fa + "_db " + self.out_dir + "/00_assembly_fasta/" + self.name + ".fa"
+                self.sp_last_train = sp.Popen(shlex.split(sp_last_train_cmd), stdout=sp.PIPE, stderr=sp.PIPE)
+                # wiat for the process to finish
+                last_train_output = self.sp_last_train.communicate()[0]
+                with open("{}/02_last_train/{}.mat".format(self.out_dir, self.name), "a") as f:
+                    f.write(last_train_output.decode('UTF-8').strip()+"\n")
+                self.sp_last_train.stdout.close()
+
+                # check lastdb return code
+                if self.sp_last_train.returncode == 0:
+                    sys.stdout = open("{}/02_last_train/{}_logfile".format(self.out_dir,self.name), "a", encoding='utf-8')
+                    sys.stdout.write("\nlast-train successfully finished\n")
+                    sys.stdout.flush()
+                else:
+                    sys.stderr = open("{}/02_last_train/error_{}".format(self.out_dir,self.name), "a", encoding='utf-8')
+                    sys.stderr.write("\nerror:last-train failed\n"+"last-train error message:\n")
+                    sys.stderr.write(self.sp_last_train.communicate()[1].decode('UTF-8'))
+                    sys.stderr.flush()
 
 
     def lastal_func(self):
-        sp.Popen(shlex.split("mkdir -p {}/02_lastal".format(self.out_dir)))
-        sp.Popen(shlex.split("cd {}/02_lastal/".format(self.out_dir)))
+        sp.Popen(shlex.split("mkdir -p {}/03_lastal".format(self.out_dir)))
+        sp.Popen(shlex.split("cd {}/03_lastal/".format(self.out_dir)))
 
-        sys.stdout = open("{}/02_lastal/logfile".format(self.out_dir), "w")
+        sys.stdout = open("{}/03_lastal/logfile".format(self.out_dir), "w")
         sys.stdout.write("\nargparse:{}\n".format(self.args))
         sys.stdout.write("\nrunning directory:{}\n".format(self.out_dir))
         sys.stdout.write("\nrunning command line:lastal -P {} {} {}\n".format(self.threads, self.lastal, self.ref_fa, self.query_fa))
         sys.stdout.flush()
 
-        os.chdir(r"{}/02_lastal/".format(self.out_dir))
+        os.chdir(r"{}/03_lastal/".format(self.out_dir))
         self.sp = sp.Popen(shlex.split("lastal -P {} {} {} {}".format(self.threads, self.lastal, self.ref_fa, self.query_fa)), stdout=sp.PIPE, stderr=sp.PIPE)
         # wiat for the process to finish
         self.sp.communicate()
         # check lastdb return code
         if self.sp.returncode == 0:
-            sys.stdout = open("{}/02_lastal/logfile".format(self.out_dir), "a")
+            sys.stdout = open("{}/03_lastal/logfile".format(self.out_dir), "a", encoding='utf-8')
             sys.stdout.write("\nlastal successfully finished\n")
             sys.stdout.flush()
         else:
-            sys.stdout = open("{}/02_lastal/err.file".format(self.out_dir), "a")
+            sys.stdout = open("{}/03_lastal/err.file".format(self.out_dir), "a", encoding='utf-8')
             sys.stdout.write("\nerror:lastal failed\n"+"lastal error message:\n")
             for stdout_line in iter(self.sp.stderr.readline, b''):
-                sys.stdout.write(stdout_line.decode('utf-8'))
+                sys.stdout.write(stdout_line)
             sys.stdout.flush()
+
 
 
 

@@ -86,7 +86,7 @@ class whole_genome_alignment(object):
             # self.multiz_func()
         elif self.begin == "lastal":
             self.lastal_func()
-            self.multiz_func()
+            # self.multiz_func()
         elif self.begin == "multiz":
             self.multiz_func()
         else:
@@ -224,28 +224,45 @@ class whole_genome_alignment(object):
     def lastal_func(self):
         sp.Popen(shlex.split("mkdir -p {}/03_lastal".format(self.out_dir)))
         sp.Popen(shlex.split("cd {}/03_lastal/".format(self.out_dir)))
-
-        sys.stdout = open("{}/03_lastal/logfile".format(self.out_dir), "w")
-        sys.stdout.write("\nargparse:{}\n".format(self.args))
-        sys.stdout.write("\nrunning directory:{}\n".format(self.out_dir))
-        sys.stdout.write("\nrunning command line:lastal -P {} {} {}\n".format(self.threads, self.lastal, self.ref_fa, self.query_fa))
-        sys.stdout.flush()
-
         os.chdir(r"{}/03_lastal/".format(self.out_dir))
-        self.sp = sp.Popen(shlex.split("lastal -P {} {} {} {}".format(self.threads, self.lastal, self.ref_fa, self.query_fa)), stdout=sp.PIPE, stderr=sp.PIPE)
-        # wiat for the process to finish
-        self.sp.communicate()
-        # check lastdb return code
-        if self.sp.returncode == 0:
-            sys.stdout = open("{}/03_lastal/logfile".format(self.out_dir), "a", encoding='utf-8')
-            sys.stdout.write("\nlastal successfully finished\n")
-            sys.stdout.flush()
-        else:
-            sys.stdout = open("{}/03_lastal/err.file".format(self.out_dir), "a", encoding='utf-8')
-            sys.stdout.write("\nerror:lastal failed\n"+"lastal error message:\n")
-            for stdout_line in iter(self.sp.stderr.readline, b''):
-                sys.stdout.write(stdout_line)
-            sys.stdout.flush()
+
+        with open(self.configure, 'r') as f:
+            lines = f.readlines()
+        for line in lines:
+            self.name = line.split('\t')[1].strip()
+            if self.name != self.ref_fa:
+                sys.stdout = open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "w")
+                sys.stdout.write("\nargparse:{}\n".format(self.args))
+                sys.stdout.write("\nrunning directory:{}\n".format(self.out_dir))
+
+                sys.stdout.write("\nrunning command line:lastal -P {} {} {}/02_last_train/{}.mat {}/01_lastdb/{}_db {}/00_assembly_fasta/{}.fa | last-split -fMAF+\n".format(self.threads, self.lastal, self.out_dir, self.name, self.out_dir, self.name, self.out_dir, self.name))
+                sys.stdout.flush()
+
+                sp_lastal_1_cmd = "lastal -P {} ".format(self.threads) + self.lastal + " " + self.out_dir + "/02_last_train/" + self.name + ".mat " + self.out_dir + "/01_lastdb/" + self.name + "_db " + self.out_dir + "/00_assembly_fasta/" + self.name + ".fa"
+                sp_lastal_2_cmd = "last-split -fMAF+"
+
+                self.sp_lastal_1 = sp.Popen(shlex.split(sp_lastal_1_cmd), stdout=sp.PIPE, stderr=sp.PIPE)
+                self.sp_lastal_2 = sp.Popen(shlex.split(sp_lastal_2_cmd), stdin=self.sp_lastal_1.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
+                self.sp_lastal_1.stdout.close()
+                sp_lastal_output = self.sp_lastal_2.communicate()[0]
+                with open("{}/03_lastal/{}.maf".format(self.out_dir, self.name), "a") as f:
+                    f.write(sp_lastal_output.decode('UTF-8').strip()+"\n")
+                self.sp_lastal_2.stdout.close()
+
+                # check lastdb return code
+                if self.sp_lastal_2.returncode == 0:
+                    sys.stdout = open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "a", encoding='utf-8')
+                    sys.stdout.write("\nlastal successfully finished\n")
+                    sys.stdout.flush()
+                    sys.stdout.close()
+                    return(0)
+                else:
+                    sys.stdout = open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "a", encoding='utf-8')
+                    sys.stdout.write("\nerror:lastal failed\n")
+                    sys.stdout.flush()
+                    sys.stdout.close()
+                    return(1)
+
 
 
 

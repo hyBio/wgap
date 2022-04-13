@@ -25,7 +25,7 @@ class wga_in_one_step(object):
             description=description)
         self.parser.add_argument('-b', '--begin', default="fasta_swap", help='the begin subprocess of the pipeline\n'+
                                                                              'default: fasta_swap\n'+
-                                                                             'optional parameters:fasta_download\tfasta_swap\tlastdb\tlast_train\tlastal\tmultiz')
+                                                                             'optional parameters:fasta_download\tfasta_swap\tlastdb\tlast_train\tlastal\tsort\tmultiz')
         self.parser.add_argument('-t', '--threads', type=int, default=1, help='number of threads')
         self.parser.add_argument('-c', '--configure', help='configure file path')
         self.parser.add_argument('-f', '--fa_dir', help='fasta file directory',default=os.getcwd())
@@ -262,6 +262,64 @@ class whole_genome_alignment(object):
                     f.close()
                     self.sp_lastal_1.stderr.close()
                     self.sp_lastal_2.stderr.close()
+                    return(1)
+        return(0)
+
+
+    def sort_func(self):
+        sp.Popen(shlex.split("mkdir -p {}/04_sort".format(self.out_dir)))
+        sp.Popen(shlex.split("cd {}/04_sort/".format(self.out_dir)))
+        os.chdir(r"{}/04_sort/".format(self.out_dir))
+
+        with open(self.configure, 'r') as f:
+            lines = f.readlines()
+        for line in lines:
+            self.name = line.split('\t')[1].strip()
+            if self.name != self.ref_fa:
+                with open("{}/04_sort/{}_logfile".format(self.out_dir, self.name), "w") as f:
+                    f.write("\nargparse:{}\n".format(self.args))
+                    f.write("\nrunning directory:{}\n".format(self.out_dir))
+                    f.write("\nrunning command line:maf-swap {}/03_lastal/{}.maf |last-split |maf-swap |maf-sort > {}/04_sort/{}.maf\n".format(self.out_dir, self.name, self.out_dir, self.name))
+                f.close()
+
+                sp_sort_1_cmd = "maf-swap {}/03_lastal/{}.maf".format(self.out_dir, self.name)
+                sp_sort_2_cmd = "last-split"
+                sp_sort_3_cmd = "maf-swap"
+                sp_sort_4_cmd = "maf-sort"
+
+                self.sp_sort_1 = sp.Popen(shlex.split(sp_sort_1_cmd), stdout=sp.PIPE, stderr=sp.PIPE)
+                self.sp_sort_2 = sp.Popen(shlex.split(sp_sort_2_cmd), stdin=self.sp_sort_1.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
+                self.sp_sort_3 = sp.Popen(shlex.split(sp_sort_3_cmd), stdin=self.sp_sort_2.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
+                self.sp_sort_4 = sp.Popen(shlex.split(sp_sort_4_cmd), stdin=self.sp_sort_3.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
+                sp_sort_4_output = self.sp_sort_4.communicate()[0]
+                with open("{}/04_sort/{}.maf".format(self.out_dir, self.name), "a", encoding='utf-8') as f:
+                    f.write(sp_sort_4_output.decode('UTF-8').strip()+"\n")
+                f.close()
+                self.sp_sort_1.stdout.close()
+                self.sp_sort_2.stdout.close()
+                self.sp_sort_3.stdout.close()
+                self.sp_sort_4.stdout.close()
+
+                # check sort_4 return code
+                if self.sp_sort_4.returncode == 0:
+                    with open("{}/04_sort/{}_logfile".format(self.out_dir, self.name), "a", encoding='utf-8') as f:
+                        f.write("\nmaf-sort successfully finished\n")
+                    f.close()
+                else:
+                    with open("{}/04_sort/error_{}".format(self.out_dir, self.name), "a", encoding='utf-8') as f:
+                        f.write("\nerror:maf-sort failed\n" + "maf-swap error message:\n")
+                        f.write(self.sp_sort_1.stderr.read().decode('UTF-8'))
+                        f.write("\nlast-split error message:\n")
+                        f.write(self.sp_sort_2.stderr.read().decode('UTF-8'))
+                        f.write("\nmaf-swap error message:\n")
+                        f.write(self.sp_sort_3.stderr.read().decode('UTF-8'))
+                        f.write("\nmaf-sort error message:\n")
+                        f.write(self.sp_sort_4.stderr.read().decode('UTF-8'))
+                    f.close()
+                    self.sp_sort_4.stderr.close()
+                    self.sp_sort_3.stderr.close()
+                    self.sp_sort_2.stderr.close()
+                    self.sp_sort_1.stderr.close()
                     return(1)
         return(0)
 

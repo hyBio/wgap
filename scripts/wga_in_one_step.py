@@ -231,38 +231,51 @@ class whole_genome_alignment(object):
         for line in lines:
             self.name = line.split('\t')[1].strip()
             if self.name != self.ref_fa:
-                sys.stdout = open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "w")
-                sys.stdout.write("\nargparse:{}\n".format(self.args))
-                sys.stdout.write("\nrunning directory:{}\n".format(self.out_dir))
+                with open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "w") as f:
+                    f.write("\nargparse:{}\n".format(self.args))
+                    f.write("\nrunning directory:{}\n".format(self.out_dir))
+                    f.write("\nrunning command line:lastal -P {} {} {}/02_last_train/{}.mat {}/01_lastdb/{}_db {}/00_assembly_fasta/{}.fa > {}/03_lastal/{}.maf\n".format(self.threads, self.lastal, self.out_dir, self.name, self.out_dir, self.name, self.out_dir, self.name, self.out_dir, self.name))
+                f.close()
 
-                sys.stdout.write("\nrunning command line:lastal -P {} {} {}/02_last_train/{}.mat {}/01_lastdb/{}_db {}/00_assembly_fasta/{}.fa | last-split -fMAF+\n".format(self.threads, self.lastal, self.out_dir, self.name, self.out_dir, self.name, self.out_dir, self.name))
-                sys.stdout.flush()
-
-                sp_lastal_1_cmd = "lastal -P {} ".format(self.threads) + self.lastal + " " + self.out_dir + "/02_last_train/" + self.name + ".mat " + self.out_dir + "/01_lastdb/" + self.name + "_db " + self.out_dir + "/00_assembly_fasta/" + self.name + ".fa"
-                sp_lastal_2_cmd = "last-split -fMAF+"
+                sp_lastal_1_cmd = "lastal -P {} ".format(self.threads) + self.lastal + " " + self.out_dir + "/02_last_train/" + self.name + ".mat " + self.out_dir + "/01_lastdb/" + self.ref_fa + "_db " + self.out_dir + "/00_assembly_fasta/" + self.name + ".fa "
+                sp_lastal_2_cmd ="last-split " + "-f " + "MAF+"
 
                 self.sp_lastal_1 = sp.Popen(shlex.split(sp_lastal_1_cmd), stdout=sp.PIPE, stderr=sp.PIPE)
-                self.sp_lastal_2 = sp.Popen(shlex.split(sp_lastal_2_cmd), stdin=self.sp_lastal_1.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
-                self.sp_lastal_1.stdout.close()
-                sp_lastal_output = self.sp_lastal_2.communicate()[0]
-                with open("{}/03_lastal/{}.maf".format(self.out_dir, self.name), "a") as f:
-                    f.write(sp_lastal_output.decode('UTF-8').strip()+"\n")
-                self.sp_lastal_2.stdout.close()
-
-                # check lastdb return code
-                if self.sp_lastal_2.returncode == 0:
-                    sys.stdout = open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "a", encoding='utf-8')
-                    sys.stdout.write("\nlastal successfully finished\n")
-                    sys.stdout.flush()
-                    sys.stdout.close()
-                    return(0)
+                self.sp_lastal_1.communicate()
+                # check lastal_1 return code
+                if self.sp_lastal_1.returncode == 0:
+                    with open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "a", encoding='utf-8') as f:
+                        f.write("\nlastal successfully finished\n")
+                    f.close()
                 else:
-                    sys.stdout = open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "a", encoding='utf-8')
-                    sys.stdout.write("\nerror:lastal failed\n")
-                    sys.stdout.flush()
-                    sys.stdout.close()
+                    with open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "a", encoding='utf-8') as f:
+                        f.write("\nerror:lastal failed\n" + "lastal_1 error message:\n")
+                        f.write(self.sp_lastal_1.stderr.read().decode('UTF-8'))
+                        self.sp_lastal_1.stderr.close()
+                    f.close()
                     return(1)
 
+                self.sp_lastal_2 = sp.Popen(shlex.split(sp_lastal_2_cmd), stdin=self.sp_lastal_1.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
+                with open("{}/03_lastal/{}.maf".format(self.out_dir, self.name), "a") as f:
+                    for line in self.sp_lastal_2.stdout:
+                        f.write(line.decode('UTF-8'))
+                f.close()
+                self.sp_lastal_2.stdout.close()
+                self.sp_lastal_1.stdout.close()
+
+                # check lastal_2 return code
+                if self.sp_lastal_2.returncode == 0:
+                    with open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "a", encoding='utf-8') as f:
+                        f.write("\nlast-split successfully finished\n")
+                    f.close()
+                    return(0)
+                else:
+                    with open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "a", encoding='utf-8') as f:
+                        f.write("\nerror:last-split failed\n" + "last-split error message:\n")
+                        f.write(self.sp_lastal_1.stderr.read().decode('UTF-8'))
+                        self.sp_lastal_1.stderr.close()
+                    f.close()
+                    return(1)
 
 
 

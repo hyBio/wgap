@@ -103,11 +103,11 @@ class whole_genome_alignment(object):
             self.fna_gz = line.split('\t')[0].strip()
             self.name = line.split('\t')[1].strip()
 
-            sys.stdout = open("{}/00_assembly_fasta/{}_logfile".format(self.out_dir,self.name), "w", encoding='utf-8')
-            sys.stdout.write("\nargparse:{}\n".format(self.args))
-            sys.stdout.write("\nrunning directory:{}\n".format(self.out_dir))
-            sys.stdout.write(" ".join(['\nrunning command line:', 'zcat', '{}'.format(self.fna_gz),'|', 'awk', '\'{print $1}\'', '|', 'sed', '\'s/>/>{}_/g\''.format(self.name), '>', '{}/00_assembly_fasta/{}.fa\n'.format(self.out_dir,self.name)]))
-            sys.stdout.flush()
+            with open("{}/00_assembly_fasta/{}_logfile".format(self.out_dir,self.name), "w", encoding='utf-8') as f:
+                f.write("\nargparse:{}\n".format(self.args))
+                f.write("\nrunning directory:{}\n".format(self.out_dir))
+                f.write(" ".join(['\nrunning command line:', 'zcat', '{}'.format(self.fna_gz),'|', 'awk', '\'{print $1}\'', '|', 'sed', '\'s/>/>{}_/g\''.format(self.name), '>', '{}/00_assembly_fasta/{}.fa\n'.format(self.out_dir,self.name)]))
+            f.close()
 
             self.sp_ungzip = sp.Popen(["zcat", "{}".format(self.fna_gz)], stdout=sp.PIPE)
             self.sp_awk = sp.Popen(shlex.split("awk '{print $1}'"), stdin=self.sp_ungzip.stdout, stdout=sp.PIPE)
@@ -120,9 +120,10 @@ class whole_genome_alignment(object):
             self.sp_sed.stdout.close()
 
             if self.sp_sed.returncode == 0:
-                sys.stdout.write("\nfasta_swap_1 successfully finished\n")
-                sys.stdout.write("\nrunning command line:samtools faidx -@ {} {}/00_assembly_fasta/{}.fa\n".format(self.threads, self.out_dir, self.name))
-                sys.stdout.flush()
+                with open("{}/00_assembly_fasta/{}_logfile".format(self.out_dir,self.name), "a", encoding='utf-8') as f:
+                    f.write("\nfasta_swap successfully finished\n")
+                    f.write("\nrunning command line:samtools faidx -@ {} {}/00_assembly_fasta/{}.fa\n".format(self.threads, self.out_dir, self.name))
+                f.close()
                 self.sp_faidx = sp.Popen(shlex.split("samtools faidx {}/00_assembly_fasta/{}.fa".format(self.out_dir,self.name)), stdout=sp.PIPE)
                 fasta_swap_2_output = self.sp_faidx.communicate()[0]
                 with open('{}/00_assembly_fasta/{}.fa.fai'.format(self.out_dir,self.name), 'a', encoding='utf-8') as fai:
@@ -130,31 +131,33 @@ class whole_genome_alignment(object):
                 self.sp_faidx.stdout.close()
 
                 if self.sp_faidx.returncode == 0:
-                    sys.stdout.write("\nfasta_swap_2 successfully finished\n")
-                    sys.stdout.flush()
-                    sys.stdout.close()
-                    return(0)
+                    with open("{}/00_assembly_fasta/{}_logfile".format(self.out_dir,self.name), "a", encoding='utf-8') as f:
+                        f.write("\nsamtools faidx successfully finished\n")
+                    f.close()
                 else:
-                    sys.stdout.write("\nfasta_swap_2 failed\n")
-                    sys.stdout.flush()
-                    sys.stdout.close()
+                    with open("{}/00_assembly_fasta/error_{}".format(self.out_dir,self.name), "a", encoding='utf-8') as f:
+                        f.write("\nsamtools faidx failed\n"+"samtools faidx failed message:\n")
+                        f.write(self.sp_faidx.stderr.read().decode('UTF-8'))
+                    f.close()
                     return(1)
             else:
-                sys.stdout.write("\nfasta_swap_1 failed\n")
-                sys.stdout.flush()
-                sys.stdout.close()
+                with open("{}/00_assembly_fasta/error_{}".format(self.out_dir,self.name), "a", encoding='utf-8') as f:
+                    f.write("\nsed failed\n"+"sed failed message:\n")
+                    f.write(self.sp_sed.stderr.read().decode('UTF-8'))
+                f.close()
                 return(1)
+        return(0)
 
 
     def lastdb_func(self):
         sp.Popen(shlex.split("mkdir -p {}/01_lastdb".format(self.out_dir)))
         sp.Popen(shlex.split("cd {}/01_lastdb/".format(self.out_dir)))
 
-        sys.stdout = open("{}/01_lastdb/logfile".format(self.out_dir), "w", encoding='utf-8')
-        sys.stdout.write("\nargparse:{}\n".format(self.args))
-        sys.stdout.write("\nrunning directory:{}\n".format(self.out_dir))
-        sys.stdout.write("\nrunning command line:lastdb -P {} {} {}_db {}/00_assembly_fasta/{}.fa\n".format(self.threads, self.lastdb, self.ref_fa, self.out_dir, self.ref_fa))
-        sys.stdout.flush()
+        with open("{}/01_lastdb/logfile".format(self.out_dir), "w", encoding='utf-8') as f:
+            f.write("\nargparse:{}\n".format(self.args))
+            f.write("\nrunning directory:{}\n".format(self.out_dir))
+            f.write(" ".join(['\nrunning command line:', 'lastdb', '-v', '-u', '-l', '1', '-c', '1', '-s', '1', '{}/01_lastdb/{}'.format(self.out_dir,self.name), '{}/00_assembly_fasta/{}.fa'.format(self.out_dir,self.name)]))
+        f.close()
 
         os.chdir(r"{}/01_lastdb/".format(self.out_dir))
         sp_lastdb_cmd = "lastdb -P {} ".format(self.threads) + self.lastdb + " " + self.ref_fa + '_db ' + self.out_dir + '/00_assembly_fasta/' + self.ref_fa + '.fa'
@@ -163,25 +166,19 @@ class whole_genome_alignment(object):
         self.sp_lastdb.communicate()
         # check lastdb return code
         if self.sp_lastdb.returncode == 0:
-            sys.stdout = open("{}/01_lastdb/logfile".format(self.out_dir), "a", encoding='utf-8')
-            sys.stdout.write("\nlastdb successfully finished\n")
-            sys.stdout.flush()
+            with open("{}/01_lastdb/logfile".format(self.out_dir), "a", encoding='utf-8') as f:
+                f.write("\nlastdb successfully finished\n")
+            f.close()
             return(0)
         else:
-            sys.stdout = open("{}/01_lastdb/logfile".format(self.out_dir), "a", encoding='utf-8')
-            sys.stdout.write("\nerror:lastdb failed\n"+"\nlastdb error message:\n")
-            sys.stdout.flush()
-
-            sys.stderr = open("{}/01_lastdb/logfile".format(self.out_dir), "a", encoding='utf-8')
-            sys.stderr.write(self.sp_lastdb.communicate()[1].decode('UTF-8'))
-            sys.stderr.flush()
-
             self.sp_lastdb_help = sp.Popen(shlex.split("lastdb --help"), stdout=sp.PIPE, stderr=sp.PIPE)
-            with open("{}/01_lastdb/logfile".format(self.out_dir), "a") as f:
+            with open("{}/01_lastdb/logfile".format(self.out_dir), "a", encoding='utf-8') as f:
+                f.write("\nlastdb failed\n"+"lastdb failed message:\n")
+                f.write(self.sp_lastdb.stderr.read().decode('UTF-8'))
+                f.write("\nlastdb help:\n")
                 f.write(self.sp_lastdb_help.stdout.read().decode('UTF-8'))
                 f.write(self.sp_lastdb_help.stderr.read().decode('UTF-8'))
-            self.sp_lastdb_help.stdout.close()
-            self.sp_lastdb_help.stderr.close()
+            f.close()
             return(1)
 
 
@@ -195,11 +192,11 @@ class whole_genome_alignment(object):
         for line in lines:
             self.name = line.split('\t')[1].strip()
             if self.name != self.ref_fa:
-                sys.stdout = open("{}/02_last_train/{}_logfile".format(self.out_dir,self.name), "w", encoding='utf-8')
-                sys.stdout.write("\nargparse:{}\n".format(self.args))
-                sys.stdout.write("\nrunning directory:{}\n".format(self.out_dir))
-                sys.stdout.write("\nrunning command line:last-train -P {} {} {}/01_lastdb/{}_db {}/00_assembly_fasta/{}.fa > {}/02_last_train/{}.mat\n".format(self.threads, self.last_train, self.out_dir, self.ref_fa, self.out_dir, self.name, self.out_dir, self.name))
-                sys.stdout.flush()
+                with open("{}/02_last_train/{}_logfile".format(self.out_dir,self.name), "w", encoding='utf-8') as f:
+                    f.write("\nargparse:{}\n".format(self.args))
+                    f.write("\nrunning directory:{}\n".format(self.out_dir))
+                    f.write("\nrunning command line:last-train -P {} {} {}/01_lastdb/{}_db {}/00_assembly_fasta/{}.fa > {}/02_last_train/{}.mat\n".format(self.threads, self.last_train, self.out_dir, self.ref_fa, self.out_dir, self.name, self.out_dir, self.name))
+                f.close()
 
                 sp_last_train_cmd = "last-train -P {} ".format(self.threads) + self.last_train + " " + self.out_dir + "/01_lastdb/" + self.ref_fa + "_db " + self.out_dir + "/00_assembly_fasta/" + self.name + ".fa"
                 self.sp_last_train = sp.Popen(shlex.split(sp_last_train_cmd), stdout=sp.PIPE, stderr=sp.PIPE)
@@ -211,14 +208,17 @@ class whole_genome_alignment(object):
 
                 # check lastdb return code
                 if self.sp_last_train.returncode == 0:
-                    sys.stdout = open("{}/02_last_train/{}_logfile".format(self.out_dir,self.name), "a", encoding='utf-8')
-                    sys.stdout.write("\nlast-train successfully finished\n")
-                    sys.stdout.flush()
+                    with open("{}/02_last_train/{}_logfile".format(self.out_dir,self.name), "a", encoding='utf-8') as f:
+                        f.write("\nlast-train successfully finished\n")
+                    f.close()
                 else:
-                    sys.stderr = open("{}/02_last_train/error_{}".format(self.out_dir,self.name), "a", encoding='utf-8')
-                    sys.stderr.write("\nerror:last-train failed\n"+"last-train error message:\n")
-                    sys.stderr.write(self.sp_last_train.communicate()[1].decode('UTF-8'))
-                    sys.stderr.flush()
+                    with open("{}/02_last_train/error_{}".format(self.out_dir,self.name), "a", encoding='utf-8') as f:
+                        f.write("\nlast-train failed\n" + "last-train error message:\n")
+                        f.write(self.sp_last_train.stderr.read().decode('UTF-8'))
+                    f.close()
+                    self.sp_last_train.stderr.close()
+                    return(1)
+        return (0)
 
 
     def lastal_func(self):
@@ -234,48 +234,36 @@ class whole_genome_alignment(object):
                 with open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "w") as f:
                     f.write("\nargparse:{}\n".format(self.args))
                     f.write("\nrunning directory:{}\n".format(self.out_dir))
-                    f.write("\nrunning command line:lastal -P {} {} {}/02_last_train/{}.mat {}/01_lastdb/{}_db {}/00_assembly_fasta/{}.fa > {}/03_lastal/{}.maf\n".format(self.threads, self.lastal, self.out_dir, self.name, self.out_dir, self.name, self.out_dir, self.name, self.out_dir, self.name))
+                    f.write("\nrunning command line:lastal -P {} {} {}/02_last_train/{}.mat {}/01_lastdb/{}_db {}/00_assembly_fasta/{}.fa | last-split -f MAF+ > {}/03_lastal/{}.maf\n".format(self.threads, self.lastal, self.out_dir, self.name, self.out_dir, self.name, self.out_dir, self.name, self.out_dir, self.name))
                 f.close()
 
                 sp_lastal_1_cmd = "lastal -P {} ".format(self.threads) + self.lastal + " " + self.out_dir + "/02_last_train/" + self.name + ".mat " + self.out_dir + "/01_lastdb/" + self.ref_fa + "_db " + self.out_dir + "/00_assembly_fasta/" + self.name + ".fa "
-                sp_lastal_2_cmd ="last-split " + "-f " + "MAF+"
+                sp_lastal_2_cmd = "last-split " + "-f " + "MAF+"
 
                 self.sp_lastal_1 = sp.Popen(shlex.split(sp_lastal_1_cmd), stdout=sp.PIPE, stderr=sp.PIPE)
-                self.sp_lastal_1.communicate()
-                # check lastal_1 return code
-                if self.sp_lastal_1.returncode == 0:
-                    with open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "a", encoding='utf-8') as f:
-                        f.write("\nlastal successfully finished\n")
-                    f.close()
-                else:
-                    with open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "a", encoding='utf-8') as f:
-                        f.write("\nerror:lastal failed\n" + "lastal_1 error message:\n")
-                        f.write(self.sp_lastal_1.stderr.read().decode('UTF-8'))
-                        self.sp_lastal_1.stderr.close()
-                    f.close()
-                    return(1)
-
                 self.sp_lastal_2 = sp.Popen(shlex.split(sp_lastal_2_cmd), stdin=self.sp_lastal_1.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
-                with open("{}/03_lastal/{}.maf".format(self.out_dir, self.name), "a") as f:
-                    for line in self.sp_lastal_2.stdout:
-                        f.write(line.decode('UTF-8'))
+                sp_lastal_2_output = self.sp_lastal_2.communicate()[0]
+                with open("{}/03_lastal/{}.maf".format(self.out_dir, self.name), "a", encoding='utf-8') as f:
+                    f.write(sp_lastal_2_output.decode('UTF-8').strip()+"\n")
                 f.close()
-                self.sp_lastal_2.stdout.close()
                 self.sp_lastal_1.stdout.close()
 
                 # check lastal_2 return code
                 if self.sp_lastal_2.returncode == 0:
                     with open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "a", encoding='utf-8') as f:
-                        f.write("\nlast-split successfully finished\n")
+                        f.write("\nlastal and last-split successfully finished\n")
                     f.close()
-                    return(0)
                 else:
-                    with open("{}/03_lastal/{}_logfile".format(self.out_dir, self.name), "a", encoding='utf-8') as f:
-                        f.write("\nerror:last-split failed\n" + "last-split error message:\n")
+                    with open("{}/03_lastal/error_{}".format(self.out_dir, self.name), "a", encoding='utf-8') as f:
+                        f.write("\nerror:lastal and last-split failed\n" + "lastal error message:\n")
                         f.write(self.sp_lastal_1.stderr.read().decode('UTF-8'))
-                        self.sp_lastal_1.stderr.close()
+                        f.write("\nlast-split error message:\n")
+                        f.write(self.sp_lastal_2.stderr.read().decode('UTF-8'))
                     f.close()
+                    self.sp_lastal_1.stderr.close()
+                    self.sp_lastal_2.stderr.close()
                     return(1)
+        return(0)
 
 
 

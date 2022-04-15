@@ -45,7 +45,7 @@ class wga_in_one_step(object):
             sys.exit(1)
         else:
             self.args = self.parser.parse_args()
-            self.whole_genome_alignment = whole_genome_alignment(self.args)
+            whole_genome_alignment(self.args)
 
 
 
@@ -58,6 +58,7 @@ class whole_genome_alignment(object):
         self.begin = self.args.begin
         self.threads = self.args.threads
         self.configure = self.args.configure
+        self.accession_list = self.args.accession_list
         self.fa_dir = self.args.fa_dir
         self.ref_fa = self.args.ref_fa
         self.exclude_fa = self.args.exclude_fa
@@ -70,7 +71,7 @@ class whole_genome_alignment(object):
         self.running()
 
     def preprocessing(self):
-        self.accession_list = []
+        self.acc_list = []
         self.fna_gz_list = []
         self.name_list = []
         self.exclude_fa_list = []
@@ -79,7 +80,7 @@ class whole_genome_alignment(object):
             with open(self.accession_list) as f:
                 lines = f.readlines()
             for line in lines:
-                self.accession_list.append(line.strip())
+                self.acc_list.append(line.strip())
 
         if self.exclude_fa != "":
             with open(self.exclude_fa, 'r') as f:
@@ -99,6 +100,7 @@ class whole_genome_alignment(object):
         self.last_train_name_list = self.name_list
         self.lastal_name_list = self.name_list
         self.sort_name_list = self.name_list
+        self.multiz_name_list = self.name_list
 
 
     def running(self):
@@ -110,20 +112,26 @@ class whole_genome_alignment(object):
             self.last_train_run()
             self.lastal_run()
             self.sort_run()
+            self.multiz_run()
         elif self.begin == "lastdb":
             self.lastdb_run()
             self.last_train_run()
             self.lastal_run()
             self.sort_run()
+            self.multiz_run()
         elif self.begin == "last_train":
             self.last_train_run()
             self.lastal_run()
             self.sort_run()
+            self.multiz_run()
         elif self.begin == "lastal":
             self.lastal_run()
             self.sort_run()
         elif self.begin == "sort":
             self.sort_run()
+            self.multiz_run()
+        elif self.begin == "multiz":
+            self.multiz_run()
         else:
             print("Incorrect parameter '{}' given to whole_genome_alignmen, please check the help".format(self.begin))
             sys.exit(1)
@@ -326,7 +334,7 @@ class whole_genome_alignment(object):
         with open("{}/04_sort/{}_logfile".format(self.out_dir, self.sort_name), "w") as f:
             f.write("\nargparse:{}\n".format(self.args))
             f.write("\nrunning directory:{}\n".format(self.out_dir))
-            f.write("\nrunning command line:maf-swap {}/03_lastal/{}.maf |last-split |maf-swap |maf-sort > {}/04_sort/{}.maf\n".format(self.out_dir, self.sort_name, self.out_dir, self.sort_name))
+            f.write("\nrunning command line:maf-swap {}/03_lastal/{}.maf |last-split |maf-swap |maf-sort|grep -v '#'|sed '1i\#maf version=1.0 scoring=last' > {}/04_sort/{}.maf\n".format(self.out_dir, self.sort_name, self.out_dir, self.sort_name))
         f.close()
 
         sp_sort_1_cmd = "maf-swap {}/03_lastal/{}.maf".format(self.out_dir, self.sort_name)
@@ -340,7 +348,10 @@ class whole_genome_alignment(object):
         self.sp_sort_4 = sp.Popen(shlex.split(sp_sort_4_cmd), stdin=self.sp_sort_3.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
         sp_sort_4_output = self.sp_sort_4.communicate()[0]
         with open("{}/04_sort/{}.maf".format(self.out_dir, self.sort_name), "a", encoding='utf-8') as f:
-            f.write(sp_sort_4_output.decode('UTF-8').strip()+"\n")
+            f.write("#maf version=1.0 scoring=last\n")
+            for line in sp_sort_4_output.decode('UTF-8').split('\n'):
+                if not line.startswith("#"):
+                    f.write(line + "\n")
         f.close()
         self.sp_sort_1.stdout.close()
         self.sp_sort_2.stdout.close()
@@ -371,9 +382,49 @@ class whole_genome_alignment(object):
             return(1)
 
 
+
+    def multiz_func(self,multiz_name):
+        self.multiz_name = multiz_name
+        multiz_left_name = self.multiz_name[0]
+        sp.Popen(shlex.split("mkdir -p {}/05_multiz".format(self.out_dir)))
+        sp.Popen(shlex.split("cd {}/05_multiz/".format(self.out_dir)))
+        os.chdir(r"{}/05_multiz/".format(self.out_dir))
+        sp.Popen(shlex.split("cp {}/04_sort/{}.maf {}/05_multiz/{}.maf".format(self.out_dir, multiz_left_name, self.out_dir, multiz_left_name))).wait()
+
+        for multiz_right_name in self.multiz_name[1::]:
+            with open("{}/05_multiz/logfile".format(self.out_dir), "a") as f:
+                f.write("\nargparse:{}\n".format(self.args))
+                f.write("\nrunning directory:{}\n".format(self.out_dir))
+                f.write("\nrunning command line:multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2\n".format(self.out_dir, multiz_left_name, self.out_dir, multiz_right_name))
+            f.close()
+
+            sp_multiz_cmd = "multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2".format(self.out_dir, multiz_left_name, self.out_dir, multiz_right_name)
+            self.sp_multiz = sp.Popen(shlex.split(sp_multiz_cmd), stdout=sp.PIPE, stderr=sp.PIPE)
+            sp_multiz_output = self.sp_multiz.communicate()[0]
+            with open("{}/05_multiz/{}_{}.maf".format(self.out_dir, multiz_left_name, multiz_right_name), "a", encoding='utf-8') as f:
+                f.write(sp_multiz_output.decode('UTF-8').strip()+"\n")
+            f.close()
+            self.sp_multiz.stdout.close()
+
+            if self.sp_multiz.returncode == 0:
+                with open("{}/05_multiz/logfile".format(self.out_dir), "a", encoding = 'utf-8') as f:
+                    f.write("\n{}_{} multiz successfully finished\n".format(multiz_left_name, multiz_right_name))
+                f.close()
+                sp_multiz_output.close()
+            else:
+                with open("{}/05_multiz/error_log".format(self.out_dir), "w", encoding = 'utf-8') as f:
+                    f.write("\nerror:multiz failed\n" + "multiz error message:\n")
+                    f.write(self.sp_multiz.stderr.read().decode('UTF-8'))
+                f.close()
+                sp_multiz_output.close()
+                self.sp_multiz.stderr.close()
+                sys.exit(1)
+            multiz_left_name = multiz_left_name + "_" + multiz_right_name
+
+
     def fasta_download_run(self):
         with Pool(self.threads) as p:
-            p.map(self.fasta_download_func, self.accession_list)
+            p.map(self.fasta_download_func, self.acc_list)
 
 
     def fasta_swap_run(self):
@@ -398,6 +449,11 @@ class whole_genome_alignment(object):
     def sort_run(self):
         with Pool(self.parallel) as p:
             p.map(self.sort_func, self.sort_name_list)
+
+
+    def multiz_run(self):
+        self.multiz_func(self.multiz_name_list)
+
 
 
 if __name__ == '__main__':

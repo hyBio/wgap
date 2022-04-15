@@ -1,4 +1,4 @@
-# !/home/huyan/miniconda3/bin/python
+#!/home/huyan/miniconda3/bin/python
 # _*_ coding: utf-8 _*_
 # @Time : 2022/4/10 21:12
 # @Author : 胡琰
@@ -378,7 +378,7 @@ class whole_genome_alignment(object):
                                   stderr=sp.PIPE)
         sp_sort_4_output = self.sp_sort_4.communicate()[0]
         with open("{}/04_sort/{}.maf".format(self.out_dir, self.sort_name), "a", encoding='utf-8') as f:
-            f.write("#maf version=1.0 scoring=last\n")
+            f.write("##maf version=1 scoring=last\n")
             for line in sp_sort_4_output.decode('UTF-8').split('\n'):
                 if not line.startswith("#"):
                     f.write(line + "\n")
@@ -426,35 +426,28 @@ class whole_genome_alignment(object):
                 f.write("\nargparse:{}\n".format(self.args))
                 f.write("\nrunning directory:{}\n".format(self.out_dir))
                 f.write(
-                    "\nrunning command line:multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2\n".format(self.out_dir,
-                                                                                                           multiz_left_name,
-                                                                                                           self.out_dir,
-                                                                                                           multiz_right_name))
+                    "\nrunning command line:multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2 > {}/05_multiz/{}_{}.maf\n".format(self.out_dir,multiz_left_name,self.out_dir,multiz_right_name,self.out_dir,multiz_left_name,multiz_right_name))
             f.close()
 
-            sp_multiz_cmd = "multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2".format(self.out_dir,
+            sp_multiz_cmd = "multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2 > {}/05_multiz/{}_{}.maf".format(self.out_dir,
                                                                                           multiz_left_name,
                                                                                           self.out_dir,
+                                                                                          multiz_right_name,
+                                                                                          self.out_dir,
+                                                                                          multiz_left_name,
                                                                                           multiz_right_name)
             self.sp_multiz = sp.Popen(shlex.split(sp_multiz_cmd), stdout=sp.PIPE, stderr=sp.PIPE)
-            sp_multiz_output = self.sp_multiz.communicate()[0]
-            with open("{}/05_multiz/{}_{}.maf".format(self.out_dir, multiz_left_name, multiz_right_name), "a",
-                      encoding='utf-8') as f:
-                f.write(sp_multiz_output.decode('UTF-8').strip() + "\n")
-            f.close()
-            self.sp_multiz.stdout.close()
+            self.sp_multiz.wait()
 
             if self.sp_multiz.returncode == 0:
                 with open("{}/05_multiz/logfile".format(self.out_dir), "a", encoding='utf-8') as f:
                     f.write("\n{}_{} multiz successfully finished\n".format(multiz_left_name, multiz_right_name))
                 f.close()
-                sp_multiz_output.close()
             else:
                 with open("{}/05_multiz/error_log".format(self.out_dir), "w", encoding='utf-8') as f:
                     f.write("\nerror:multiz failed\n" + "multiz error message:\n")
                     f.write(self.sp_multiz.stderr.read().decode('UTF-8'))
                 f.close()
-                sp_multiz_output.close()
                 self.sp_multiz.stderr.close()
                 sys.exit(1)
             multiz_left_name = multiz_left_name + "_" + multiz_right_name

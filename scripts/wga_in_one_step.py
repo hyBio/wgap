@@ -458,3 +458,4 @@ class whole_genome_alignment(object):
 
 if __name__ == '__main__':
     wga_in_one_step()
+

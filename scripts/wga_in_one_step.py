@@ -429,15 +429,12 @@ class whole_genome_alignment(object):
                     "\nrunning command line:multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2 > {}/05_multiz/{}_{}.maf\n".format(self.out_dir,multiz_left_name,self.out_dir,multiz_right_name,self.out_dir,multiz_left_name,multiz_right_name))
             f.close()
 
-            sp_multiz_cmd = "multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2 > {}/05_multiz/{}_{}.maf".format(self.out_dir,
-                                                                                          multiz_left_name,
-                                                                                          self.out_dir,
-                                                                                          multiz_right_name,
-                                                                                          self.out_dir,
-                                                                                          multiz_left_name,
-                                                                                          multiz_right_name)
+            sp_multiz_cmd = "multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2".format(self.out_dir,multiz_left_name,self.out_dir,multiz_right_name)
             self.sp_multiz = sp.Popen(shlex.split(sp_multiz_cmd), stdout=sp.PIPE, stderr=sp.PIPE)
-            self.sp_multiz.wait()
+            sp_multiz_output = self.sp_multiz.communicate()[0]
+            with open("{}/05_multiz/{}_{}.maf".format(self.out_dir, multiz_left_name, multiz_right_name), "a", encoding='utf-8') as f:
+                f.write(sp_multiz_output.decode('UTF-8'))
+            f.close()
 
             if self.sp_multiz.returncode == 0:
                 with open("{}/05_multiz/logfile".format(self.out_dir), "a", encoding='utf-8') as f:

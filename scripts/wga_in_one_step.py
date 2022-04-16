@@ -13,6 +13,7 @@ import os
 import shlex
 import subprocess as sp
 from multiprocessing import Pool
+import pandas as pd
 
 _version = "1.0.0"
 
@@ -112,25 +113,32 @@ class whole_genome_alignment(object):
             self.lastal_run()
             self.sort_run()
             self.multiz_run()
+            self.maf2lst_run()
         elif self.begin == "lastdb":
             self.lastdb_run()
             self.last_train_run()
             self.lastal_run()
             self.sort_run()
             self.multiz_run()
+            self.maf2lst_run()
         elif self.begin == "last_train":
             self.last_train_run()
             self.lastal_run()
             self.sort_run()
             self.multiz_run()
+            self.maf2lst_run()
         elif self.begin == "lastal":
             self.lastal_run()
             self.sort_run()
+            self.multiz_run()
+            self.maf2lst_run()
         elif self.begin == "sort":
             self.sort_run()
             self.multiz_run()
+            self.maf2lst_run()
         elif self.begin == "multiz":
             self.multiz_run()
+            self.maf2lst_run()
         else:
             print("Incorrect parameter '{}' given to whole_genome_alignmen, please check the help".format(self.begin))
             sys.exit(1)
@@ -420,25 +428,25 @@ class whole_genome_alignment(object):
         sp.Popen(shlex.split(
             "cp {}/04_sort/{}.maf {}/05_multiz/1.maf".format(self.out_dir, first_name, self.out_dir))).wait()
 
-        name_n = 1
+        self.name_n = 1
         for next_name in self.multiz_name[1::]:
             with open("{}/05_multiz/logfile".format(self.out_dir), "a") as f:
                 f.write("\nargparse:{}\n".format(self.args))
                 f.write("\nrunning directory:{}\n".format(self.out_dir))
                 f.write(
-                    "\nrunning command line:multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2 > {}/05_multiz/{}.maf\n".format(self.out_dir,name_n,self.out_dir,next_name,self.out_dir,name_n+1))
+                    "\nrunning command line:multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2 > {}/05_multiz/{}.maf\n".format(self.out_dir,self.name_n,self.out_dir,next_name,self.out_dir,self.name_n+1))
             f.close()
 
-            sp_multiz_cmd = "multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2".format(self.out_dir,name_n,self.out_dir,next_name)
+            sp_multiz_cmd = "multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2".format(self.out_dir,self.name_n,self.out_dir,next_name)
             self.sp_multiz = sp.Popen(shlex.split(sp_multiz_cmd), stdout=sp.PIPE, stderr=sp.PIPE)
             sp_multiz_output = self.sp_multiz.communicate()[0]
-            with open("{}/05_multiz/{}.maf".format(self.out_dir, name_n+1), "a", encoding='utf-8') as f:
+            with open("{}/05_multiz/{}.maf".format(self.out_dir, self.name_n+1), "a", encoding='utf-8') as f:
                 f.write(sp_multiz_output.decode('UTF-8'))
             f.close()
 
             if self.sp_multiz.returncode == 0:
                 with open("{}/05_multiz/logfile".format(self.out_dir), "a", encoding='utf-8') as f:
-                    f.write("\n{} multiz successfully finished\n".format(name_n+1))
+                    f.write("\n{} multiz successfully finished\n".format(self.name_n+1))
                 f.close()
             else:
                 with open("{}/05_multiz/error_log".format(self.out_dir), "w", encoding='utf-8') as f:
@@ -447,7 +455,34 @@ class whole_genome_alignment(object):
                 f.close()
                 self.sp_multiz.stderr.close()
                 sys.exit(1)
-            name_n += 1
+            self.name_n += 1
+
+    def maf2lst_fa_func(self,maf_file,lst_file,fasta_file):
+        sp.Popen(shlex.split("mkdir -p {}/06_maf2lst".format(self.out_dir)))
+        sp.Popen(shlex.split("cd {}/06_maf2lst/".format(self.out_dir)))
+        os.chdir(r"{}/06_maf2lst/".format(self.out_dir))
+
+        with open(maf_file, 'r') as maf_f, open(lst_file, 'w') as lst_f, open(fasta_file, 'w') as fa_f:
+            maf = [' '.join(line.split()).split() for line in maf_f.readlines() if line.startswith('s')]
+            maf_df = pd.DataFrame(maf)
+            maf_df.columns = ['s', 'chr_name', 'start', 'base_len', 'strand', 'chr_len', 'seq']
+            maf_df['species'] = maf_df.chr_name.apply(lambda x: x.split('_')[0])
+
+            lst_df = maf_df.loc[maf_df.species == maf_df.species[0], :]
+            lst_df = lst_df.apply(lambda x:pd.DataFrame({"chr":[x.chr_name for i in range(len(x.seq))],"start":[int(x.start)+i for i in range(len(x.seq))]}),axis=1)
+            lst_df = pd.concat([i for i in lst_df.values], axis=0)
+            for species in maf_df.species.unique():
+                if species != maf_df.species[0]:
+                    lst_df[species] = [i for i in ''.join(maf_df.loc[maf_df.species == species, 'seq'])]
+            lst_df.to_csv(lst_f, sep='\t', header=True, index=False)
+
+            species_seq = maf_df.groupby("species")['seq'].apply(lambda x: ''.join(x))
+            for species, seq in species_seq.items():
+                fa_f.write('>' + species + '\n')
+                fa_f.write(seq + '\n')
+            fa_f.close()
+            lst_f.close()
+            maf_f.close()
 
     def fasta_download_run(self):
         with Pool(self.threads) as p:
@@ -474,6 +509,12 @@ class whole_genome_alignment(object):
 
     def multiz_run(self):
         self.multiz_func(self.multiz_name_list)
+
+    def maf2lst_run(self):
+        maf_file = "{}/05_multiz/{}.maf".format(self.out_dir, self.name_n-1)
+        lst_file = "{}/06_maf2lst/{}.lst".format(self.out_dir, self.name_n-1)
+        fasta_file = "{}/06_maf2lst/{}.fa".format(self.out_dir, self.name_n-1)
+        self.maf2lst_fa_func(maf_file,lst_file, fasta_file)
 
 
 if __name__ == '__main__':

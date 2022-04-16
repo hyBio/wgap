@@ -413,32 +413,32 @@ class whole_genome_alignment(object):
 
     def multiz_func(self, multiz_name):
         self.multiz_name = multiz_name
-        multiz_left_name = self.multiz_name[0]
+        first_name = self.multiz_name[0]
         sp.Popen(shlex.split("mkdir -p {}/05_multiz".format(self.out_dir)))
         sp.Popen(shlex.split("cd {}/05_multiz/".format(self.out_dir)))
         os.chdir(r"{}/05_multiz/".format(self.out_dir))
         sp.Popen(shlex.split(
-            "cp {}/04_sort/{}.maf {}/05_multiz/{}.maf".format(self.out_dir, multiz_left_name, self.out_dir,
-                                                              multiz_left_name))).wait()
+            "cp {}/04_sort/{}.maf {}/05_multiz/1.maf".format(self.out_dir, first_name, self.out_dir))).wait()
 
-        for multiz_right_name in self.multiz_name[1::]:
+        name_n = 1
+        for next_name in self.multiz_name[1::]:
             with open("{}/05_multiz/logfile".format(self.out_dir), "a") as f:
                 f.write("\nargparse:{}\n".format(self.args))
                 f.write("\nrunning directory:{}\n".format(self.out_dir))
                 f.write(
-                    "\nrunning command line:multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2 > {}/05_multiz/{}_{}.maf\n".format(self.out_dir,multiz_left_name,self.out_dir,multiz_right_name,self.out_dir,multiz_left_name,multiz_right_name))
+                    "\nrunning command line:multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2 > {}/05_multiz/{}.maf\n".format(self.out_dir,name_n,self.out_dir,next_name,self.out_dir,name_n+1))
             f.close()
 
-            sp_multiz_cmd = "multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2".format(self.out_dir,multiz_left_name,self.out_dir,multiz_right_name)
+            sp_multiz_cmd = "multiz {}/05_multiz/{}.maf {}/04_sort/{}.maf 0 U1 U2".format(self.out_dir,name_n,self.out_dir,next_name)
             self.sp_multiz = sp.Popen(shlex.split(sp_multiz_cmd), stdout=sp.PIPE, stderr=sp.PIPE)
             sp_multiz_output = self.sp_multiz.communicate()[0]
-            with open("{}/05_multiz/{}_{}.maf".format(self.out_dir, multiz_left_name, multiz_right_name), "a", encoding='utf-8') as f:
+            with open("{}/05_multiz/{}.maf".format(self.out_dir, name_n+1), "a", encoding='utf-8') as f:
                 f.write(sp_multiz_output.decode('UTF-8'))
             f.close()
 
             if self.sp_multiz.returncode == 0:
                 with open("{}/05_multiz/logfile".format(self.out_dir), "a", encoding='utf-8') as f:
-                    f.write("\n{}_{} multiz successfully finished\n".format(multiz_left_name, multiz_right_name))
+                    f.write("\n{} multiz successfully finished\n".format(name_n+1))
                 f.close()
             else:
                 with open("{}/05_multiz/error_log".format(self.out_dir), "w", encoding='utf-8') as f:
@@ -447,7 +447,7 @@ class whole_genome_alignment(object):
                 f.close()
                 self.sp_multiz.stderr.close()
                 sys.exit(1)
-            multiz_left_name = multiz_left_name + "_" + multiz_right_name
+            name_n += 1
 
     def fasta_download_run(self):
         with Pool(self.threads) as p:

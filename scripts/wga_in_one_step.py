@@ -27,7 +27,7 @@ class wga_in_one_step(object):
             description=description)
         self.parser.add_argument('-b', '--begin', default="fasta_swap", help='the begin subprocess of the pipeline\n'
                                                                              'default: fasta_swap\n'
-                                                                             'optional parameters:fasta_download\tfasta_swap\tlastdb\tlast_train\tlastal\tsort\tmultiz',
+                                                                             'optional parameters:fasta_download\tfasta_swap\tlastdb\tlast_train\tlastal\tsort\tmultiz\tmaf2lst_fa\tiqtree\n',
                                  required=True)
         self.parser.add_argument('-p', '--parallel', default=1, type=int, help='the number of parallel subprocess')
         self.parser.add_argument('-t', '--threads', type=int, default=1,
@@ -38,9 +38,10 @@ class wga_in_one_step(object):
         self.parser.add_argument('-r', '--ref_fa', help='reference fasta file')
         self.parser.add_argument('-e', '--exclude_fa', default="", help='exclude fasta file name')
         self.parser.add_argument('-o', '--out_dir', help='output directory', default=os.getcwd())
-        self.parser.add_argument('-s1', '--lastdb', help='lastdb argparse', type=str, default='')
-        self.parser.add_argument('-s2', '--last_train', help='last_train argparse', type=str, default='')
-        self.parser.add_argument('-s3', '--lastal', help='lastal argparse', type=str, default='')
+        self.parser.add_argument('-lastdb', '--lastdb', help='lastdb argparse', type=str, default='')
+        self.parser.add_argument('-last_train', '--last_train', help='last_train argparse', type=str, default='')
+        self.parser.add_argument('-lastal', '--lastal', help='lastal argparse', type=str, default='')
+        self.parser.add_argument('-iqtree', '--iqtree', help='iqtree argparse', type=str, default='')
         self.parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + _version)
 
         if len(sys.argv) == 1:
@@ -67,6 +68,7 @@ class whole_genome_alignment(object):
         self.lastdb = self.args.lastdb
         self.last_train = self.args.last_train
         self.lastal = self.args.lastal
+        self.iqtree = self.args.iqtree
 
         self.preprocessing()
         self.running()
@@ -74,7 +76,7 @@ class whole_genome_alignment(object):
     def preprocessing(self):
         self.acc_list = []
         self.fna_gz_list = []
-        self.name_list = []
+        self.fasta_swap_name_list = []
         self.exclude_fa_list = []
 
         if self.accession_list != "":
@@ -92,10 +94,12 @@ class whole_genome_alignment(object):
         with open(self.configure, 'r') as f:
             lines = f.readlines()
         for line in lines:
-            self.fna_gz_list.append(line.split('\t')[0].strip())
-            self.name_list.append(line.split('\t')[1].strip())
-        self.fasta_swap_name_list = self.name_list
-        self.name_list.remove(self.ref_fa)
+            if line.startswith('#') or line.startswith('\n'):
+                continue
+            else:
+                self.fna_gz_list.append(line.split('\t')[0].strip())
+                self.fasta_swap_name_list.append(line.split('\t')[1].strip())
+        self.name_list = [i for i in self.fasta_swap_name_list if i != self.ref_fa]
         for i in self.exclude_fa_list:
             self.name_list.remove(i)
         self.last_train_name_list = self.name_list
@@ -113,32 +117,43 @@ class whole_genome_alignment(object):
             self.lastal_run()
             self.sort_run()
             self.multiz_run()
-            self.maf2lst_run()
+            self.maf2lst_fa_run()
+            self.iqtree_run()
         elif self.begin == "lastdb":
             self.lastdb_run()
             self.last_train_run()
             self.lastal_run()
             self.sort_run()
             self.multiz_run()
-            self.maf2lst_run()
+            self.maf2lst_fa_run()
+            self.iqtree_run()
         elif self.begin == "last_train":
             self.last_train_run()
             self.lastal_run()
             self.sort_run()
             self.multiz_run()
-            self.maf2lst_run()
+            self.maf2lst_fa_run()
+            self.iqtree_run()
         elif self.begin == "lastal":
             self.lastal_run()
             self.sort_run()
             self.multiz_run()
-            self.maf2lst_run()
+            self.maf2lst_fa_run()
+            self.iqtree_run()
         elif self.begin == "sort":
             self.sort_run()
             self.multiz_run()
-            self.maf2lst_run()
+            self.maf2lst_fa_run()
+            self.iqtree_run()
         elif self.begin == "multiz":
             self.multiz_run()
-            self.maf2lst_run()
+            self.maf2lst_fa_run()
+            self.iqtree_run()
+        elif self.begin == "maf2lst_fa":
+            self.maf2lst_fa_run()
+            self.iqtree_run()
+        elif self.begin == "iqtree":
+            self.iqtree_run()
         else:
             print("Incorrect parameter '{}' given to whole_genome_alignmen, please check the help".format(self.begin))
             sys.exit(1)
@@ -173,15 +188,15 @@ class whole_genome_alignment(object):
             f.close()
             return (1)
 
-    def fasta_swap_func(self, fna_gz, fasta_swap_name):
-        self.fna_gz = fna_gz
-        self.fasta_swap_name = fasta_swap_name
+    def fasta_swap_func(self, fna_gz_fasta_swap_name):
+        self.fna_gz = fna_gz_fasta_swap_name[0]
+        self.fasta_swap_name = fna_gz_fasta_swap_name[1]
 
         sp.Popen(shlex.split("mkdir -p {}/00_assembly_fasta".format(self.out_dir)))
         sp.Popen(shlex.split("cd {}/00_assembly_fasta/".format(self.out_dir)))
         os.chdir(r"{}00_assembly_fasta/".format(self.out_dir))
 
-        with open("{}/00_assembly_fasta/{}_logfile".format(self.out_dir, fasta_swap_name.name), "w",
+        with open("{}/00_assembly_fasta/{}_logfile".format(self.out_dir, self.fasta_swap_name), "w",
                   encoding='utf-8') as f:
             f.write("\nargparse:{}\n".format(self.args))
             f.write("\nrunning directory:{}\n".format(self.out_dir))
@@ -462,7 +477,23 @@ class whole_genome_alignment(object):
         sp.Popen(shlex.split("cd {}/06_maf2lst/".format(self.out_dir)))
         os.chdir(r"{}/06_maf2lst/".format(self.out_dir))
 
-        with open(maf_file, 'r') as maf_f, open(lst_file, 'w') as lst_f, open(fasta_file, 'w') as fa_f:
+        csplit_cmd = 'csplit %s /^a/ -n8 -s {*} -f block_' %(maf_file)
+        sp_csplit = sp.Popen(shlex.split(csplit_cmd))
+        sp_csplit.wait()
+
+        for maf_block_file in [f for f in os.listdir('.') if f.startswith('block')]:
+            with open(maf_block_file, 'r', encoding='utf-8') as maf_block:
+                maf_block_startswith_s = [line for line in maf_block.readlines() if line.startswith('s')]
+
+            if len(maf_block_startswith_s) == self.name_n:
+                with open('full.maf', 'a', encoding='utf-8') as full_maf, open(maf_block_file, 'r', encoding='utf-8') as maf_block:
+                    full_maf.write(maf_block.read())
+            else:
+                with open('broken.maf', 'a', encoding='utf-8') as broken_maf, open(maf_block_file, 'r', encoding='utf-8') as maf_block:
+                    broken_maf.write(maf_block.read())
+            os.remove(maf_block_file)
+
+        with open("full.maf", 'r') as maf_f, open(fasta_file, 'w') as fa_f:
             maf = [' '.join(line.split()).split() for line in maf_f.readlines() if line.startswith('s')]
             maf_df = pd.DataFrame(maf)
             maf_df.columns = ['s', 'chr_name', 'start', 'base_len', 'strand', 'chr_len', 'seq']
@@ -472,17 +503,41 @@ class whole_genome_alignment(object):
             lst_df = lst_df.apply(lambda x:pd.DataFrame({"chr":[x.chr_name for i in range(len(x.seq))],"start":[int(x.start)+i for i in range(len(x.seq))]}),axis=1)
             lst_df = pd.concat([i for i in lst_df.values], axis=0)
             for species in maf_df.species.unique():
-                if species != maf_df.species[0]:
-                    lst_df[species] = [i for i in ''.join(maf_df.loc[maf_df.species == species, 'seq'])]
-            lst_df.to_csv(lst_f, sep='\t', header=True, index=False)
+                species_seq = [i for i in ''.join(maf_df.loc[maf_df.species == species, 'seq'].values).upper()]
+                lst_df[species] = species_seq
+            lst_df.to_csv(lst_file, sep='\t', header=True, index=False)
 
             species_seq = maf_df.groupby("species")['seq'].apply(lambda x: ''.join(x))
             for species, seq in species_seq.items():
                 fa_f.write('>' + species + '\n')
                 fa_f.write(seq + '\n')
-            fa_f.close()
-            lst_f.close()
-            maf_f.close()
+
+    def iqtree_func(self,fasta_file):
+        sp.Popen(shlex.split("mkdir -p {}/07_iqtree".format(self.out_dir)))
+        sp.Popen(shlex.split("cd {}/07_iqtree/".format(self.out_dir)))
+        os.chdir(r"{}/07_iqtree/".format(self.out_dir))
+
+        with open("logfile", "w", encoding='utf-8') as f:
+            f.write("\nargparse:{}\n".format(self.args))
+            f.write("\nrunning directory:{}\n".format(self.out_dir))
+            f.write("\nrunning command line:iqtree -s {} -nt {} {}\n".format(fasta_file, self.threads, self.iqtree))
+        f.close()
+
+        self.sp_iqtree = sp.Popen(shlex.split("iqtree -s {} -nt {} {}".format(fasta_file, self.threads, self.iqtree)), stdout=sp.PIPE, stderr=sp.PIPE)
+        self.sp_iqtree.wait()
+
+        if self.sp_iqtree.returncode == 0:
+            with open("logfile", "a", encoding='utf-8') as f:
+                f.write("\n{} iqtree successfully finished\n".format(self.name_n))
+                f.write(self.sp_iqtree.stdout.read().decode('UTF-8'))
+            f.close()
+        else:
+            with open("error_log", "w", encoding='utf-8') as f:
+                f.write("\nerror:iqtree failed\n" + "iqtree error message:\n")
+                f.write(self.sp_iqtree.stderr.read().decode('UTF-8'))
+            f.close()
+            self.sp_iqtree.stderr.close()
+            sys.exit(1)
 
     def fasta_download_run(self):
         with Pool(self.threads) as p:
@@ -490,7 +545,7 @@ class whole_genome_alignment(object):
 
     def fasta_swap_run(self):
         with Pool(self.parallel) as p:
-            p.map(self.fasta_swap_func, zip(self.fna_gz_list, self.fasta_swap_name_list))
+            p.map(self.fasta_swap_func, [(x,y) for x,y in zip(self.fna_gz_list, self.fasta_swap_name_list)])
 
     def lastdb_run(self):
         self.lastdb_func()
@@ -510,11 +565,19 @@ class whole_genome_alignment(object):
     def multiz_run(self):
         self.multiz_func(self.multiz_name_list)
 
-    def maf2lst_run(self):
+    def maf2lst_fa_run(self):
+        if not hasattr(self,'name_n'):
+            self.name_n = len(self.fna_gz_list)
         maf_file = "{}/05_multiz/{}.maf".format(self.out_dir, self.name_n-1)
-        lst_file = "{}/06_maf2lst/{}.lst".format(self.out_dir, self.name_n-1)
-        fasta_file = "{}/06_maf2lst/{}.fa".format(self.out_dir, self.name_n-1)
-        self.maf2lst_fa_func(maf_file,lst_file, fasta_file)
+        lst_file = "{}/06_maf2lst/{}_{}.lst".format(self.out_dir, self.ref_fa, self.name_n-1)
+        fasta_file = "{}/06_maf2lst/{}_{}.fa".format(self.out_dir, self.ref_fa, self.name_n-1)
+        self.maf2lst_fa_func(maf_file, lst_file, fasta_file)
+
+    def iqtree_run(self):
+        if not hasattr(self,'name_n'):
+            self.name_n = len(self.fna_gz_list)
+        fasta_file = "{}/06_maf2lst/{}_{}.fa".format(self.out_dir, self.ref_fa, self.name_n-1)
+        self.iqtree_func(fasta_file)
 
 
 if __name__ == '__main__':

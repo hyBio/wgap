@@ -1,4 +1,3 @@
-#!/home/huyan/miniconda3/bin/python
 # _*_ coding: utf-8 _*_
 # @Time : 2022/4/10 21:12
 # @Author : 胡琰
@@ -12,7 +11,7 @@ import sys
 import os
 import shlex
 import subprocess as sp
-from multiprocessing import Pool
+import multiprocessing as mp
 import pandas as pd
 
 _version = "1.0.0"
@@ -134,9 +133,9 @@ class whole_genome_alignment(object):
             f.close()
             return 1
 
-    def fasta_swap_func(self, fna_gz_fasta_swap_name):
-        fna_gz = fna_gz_fasta_swap_name[0]
-        fasta_swap_name = fna_gz_fasta_swap_name[1]
+    def fasta_swap_func(self, fna_gz_fasta_swap_name, q):
+        fna_gz = fna_gz_fasta_swap_name[0][0]
+        fasta_swap_name = fna_gz_fasta_swap_name[0][1]
 
         sp.Popen(shlex.split("mkdir -p {}/00_assembly_fasta".format(self.out_dir)))
         sp.Popen(shlex.split("cd {}/00_assembly_fasta/".format(self.out_dir)))
@@ -184,21 +183,21 @@ class whole_genome_alignment(object):
                           encoding='utf-8') as f:
                     f.write("\nsamtools faidx successfully finished\n")
                 f.close()
-                return 0
+                q.put(0)
             else:
                 with open("{}/00_assembly_fasta/error_{}".format(self.out_dir, fasta_swap_name), "w",
                           encoding='utf-8') as f:
                     f.write("\nsamtools faidx failed\n" + "samtools faidx failed message:\n")
                     f.write(self.sp_faidx.stderr.read().decode('UTF-8'))
                 f.close()
-                return 1
+                q.put(1)
         else:
             with open("{}/00_assembly_fasta/error_{}".format(self.out_dir, fasta_swap_name), "w",
                       encoding='utf-8') as f:
                 f.write("\nsed failed\n" + "sed failed message:\n")
                 f.write(self.sp_sed.stderr.read().decode('UTF-8'))
             f.close()
-            return 1
+            q.put(1)
 
     def lastdb_func(self):
         sp.Popen(shlex.split("mkdir -p {}/01_lastdb".format(self.out_dir)))
@@ -234,7 +233,8 @@ class whole_genome_alignment(object):
             f.close()
             return 1
 
-    def last_train_func(self, last_train_name):
+    def last_train_func(self, last_train_name, q):
+        last_train_name = last_train_name[0]
         sp.Popen(shlex.split("mkdir -p {}/02_last_train".format(self.out_dir)))
         sp.Popen(shlex.split("cd {}/02_last_train/".format(self.out_dir)))
         os.chdir(r"{}/02_last_train/".format(self.out_dir))
@@ -263,16 +263,17 @@ class whole_genome_alignment(object):
                       encoding='utf-8') as f:
                 f.write("\nlast-train successfully finished\n")
             f.close()
-            return 0
+            q.put(0)
         else:
             with open("{}/02_last_train/error_{}".format(self.out_dir, last_train_name), "w",encoding='utf-8') as f:
                 f.write("\nlast-train failed\n" + "last-train error message:\n")
                 f.write(self.sp_last_train.stderr.read().decode('UTF-8'))
             f.close()
             self.sp_last_train.stderr.close()
-            return 1
+            q.put(1)
 
-    def lastal_func(self, lastal_name):
+    def lastal_func(self, lastal_name, q):
+        lastal_name = lastal_name[0]
         sp.Popen(shlex.split("mkdir -p {}/03_lastal".format(self.out_dir)))
         sp.Popen(shlex.split("cd {}/03_lastal/".format(self.out_dir)))
         os.chdir(r"{}/03_lastal/".format(self.out_dir))
@@ -304,7 +305,7 @@ class whole_genome_alignment(object):
             with open("{}/03_lastal/{}_logfile".format(self.out_dir, lastal_name), "a", encoding='utf-8') as f:
                 f.write("\nlastal and last-split successfully finished\n")
             f.close()
-            return 0
+            q.put(0)
         else:
             with open("{}/03_lastal/error_{}".format(self.out_dir, lastal_name), "w", encoding='utf-8') as f:
                 f.write("\nerror:lastal and last-split failed\n" + "lastal error message:\n")
@@ -314,9 +315,10 @@ class whole_genome_alignment(object):
             f.close()
             self.sp_lastal_1.stderr.close()
             self.sp_lastal_2.stderr.close()
-            return 1
+            q.put(1)
 
-    def sort_func(self, sort_name):
+    def sort_func(self, sort_name, q):
+        sort_name = sort_name[0]
         sp.Popen(shlex.split("mkdir -p {}/04_sort".format(self.out_dir)))
         sp.Popen(shlex.split("cd {}/04_sort/".format(self.out_dir)))
         os.chdir(r"{}/04_sort/".format(self.out_dir))
@@ -358,7 +360,7 @@ class whole_genome_alignment(object):
             with open("{}/04_sort/{}_logfile".format(self.out_dir, sort_name), "a", encoding='utf-8') as f:
                 f.write("\nmaf-sort successfully finished\n")
             f.close()
-            return 0
+            q.put(0)
         else:
             with open("{}/04_sort/error_{}".format(self.out_dir, sort_name), "w", encoding='utf-8') as f:
                 f.write("\nerror:maf-sort failed\n" + "maf-swap error message:\n")
@@ -374,7 +376,7 @@ class whole_genome_alignment(object):
             self.sp_sort_3.stderr.close()
             self.sp_sort_2.stderr.close()
             self.sp_sort_1.stderr.close()
-            return 1
+            q.put(1)
 
     def multiz_func(self, multiz_name):
         first_name = multiz_name[0]
@@ -655,32 +657,38 @@ class run(whole_genome_alignment):
             sys.exit(1)
 
     def fasta_download_run(self):
-        p = Pool(self.parallel)
-        result = []
+        q = mp.Queue()
+        jobs = []
         for i in self.acc_list:
-            result.append(p.apply_async(self.fasta_download_func, args=(i,)))
-        p.close()
-        p.join()
-        [i.wait() for i in result]
-        if len([i.get() for i in result if i.ready() and i.successful()]) == len(self.acc_list):
-            if sum([i.get() for i in result if i.ready() and i.successful()]) == 0:
-                return 0
-            else:
-                return 1
+            p = mp.Process(target=self.fasta_download_func, args=((i,), q))
+            jobs.append(p)
+            p.start()
+
+        for p in jobs:
+            p.join()
+
+        results = [q.get() for j in jobs]
+        if sum(results) == 0 and len(results) == len(self.acc_list):
+            return 0
+        else:
+            return 1
 
     def fasta_swap_run(self):
-        p = Pool(self.parallel)
-        result = []
+        q = mp.Queue()
+        jobs = []
         for i in [(x,y) for x,y in zip(self.fna_gz_list, self.fasta_swap_name_list)]:
-            result.append(p.apply_async(self.fasta_swap_func, args=(i,)))
-        p.close()
-        p.join()
-        [i.wait() for i in result]
-        if len([i.get() for i in result if i.ready() and i.successful()]) == len(self.fna_gz_list):
-            if sum([i.get() for i in result if i.ready() and i.successful()]) == 0:
-                return 0
-            else:
-                return 1
+            p = mp.Process(target=self.fasta_swap_func, args=((i,), q))
+            jobs.append(p)
+            p.start()
+
+        for p in jobs:
+            p.join()
+
+        results = [q.get() for j in jobs]
+        if sum(results) == 0 and len(results) == len(self.fna_gz_list):
+            return 0
+        else:
+            return 1
 
     def lastdb_run(self):
         if self.lastdb_func() == 0:
@@ -689,47 +697,58 @@ class run(whole_genome_alignment):
             return 1
 
     def last_train_run(self):
-        p = Pool(self.parallel)
-        result = []
+        q = mp.Queue()
+        jobs = []
+
         for i in self.last_train_name_list:
-            result.append(p.apply_async(self.last_train_func, args=(i,)))
-        p.close()
-        p.join()
-        [i.wait() for i in result]
-        print([i.get() for i in result])
-        if len([i.get() for i in result if i.ready() and i.successful()]) == len(self.last_train_name_list):
-            if sum([i.get() for i in result if i.ready() and i.successful()]) == 0:
-                return 0
-            else:
-                return 1
+            p = mp.Process(target=self.last_train_func, args=((i,), q))
+            jobs.append(p)
+            p.start()
+
+        for p in jobs:
+            p.join()
+
+        results = [q.get() for j in jobs]
+        if sum(results) == 0 and len(results) == len(self.last_train_name_list):
+            return 0
+        else:
+            return 1
 
     def lastal_run(self):
-        p = Pool(self.parallel)
-        result = []
+        q = mp.Queue()
+        jobs = []
+
         for i in self.lastal_name_list:
-            result.append(p.apply_async(self.lastal_func, args=(i,)))
-        p.close()
-        p.join()
-        [i.wait() for i in result]
-        if len([i.get() for i in result if i.ready() and i.successful()]) == len(self.lastal_name_list):
-            if sum([i.get() for i in result if i.ready() and i.successful()]) == 0:
-                return 0
-            else:
-                return 1
+            p = mp.Process(target=self.lastal_func, args=((i,), q))
+            jobs.append(p)
+            p.start()
+
+        for p in jobs:
+            p.join()
+
+        results = [q.get() for j in jobs]
+        if sum(results) == 0 and len(results) == len(self.lastal_name_list):
+            return 0
+        else:
+            return 1
 
     def sort_run(self):
-        p = Pool(self.parallel)
-        result = []
+        q = mp.Queue()
+        jobs = []
+
         for i in self.sort_name_list:
-            result.append(p.apply_async(self.sort_func, args=(i,)))
-        p.close()
-        p.join()
-        [i.wait() for i in result]
-        if len([i.get() for i in result if i.ready() and i.successful()]) == len(self.sort_name_list):
-            if sum([i.get() for i in result if i.ready() and i.successful()]) == 0:
-                return 0
-            else:
-                return 1
+            p = mp.Process(target=self.sort_func, args=((i,), q))
+            jobs.append(p)
+            p.start()
+
+        for p in jobs:
+            p.join()
+
+        results = [q.get() for j in jobs]
+        if sum(results) == 0 and len(results) == len(self.sort_name_list):
+            return 0
+        else:
+            return 1
 
     def multiz_run(self):
         if self.multiz_func(self.multiz_name_list) == 0:
@@ -767,4 +786,3 @@ if __name__ == '__main__':
 
 
 
-    

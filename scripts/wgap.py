@@ -274,15 +274,17 @@ class Wgap_func(object):
         # from small to big
         self.maf_list_sort_by_size = sorted(maf_list, key=lambda x: os.path.getsize(x))
         pool = mp.Pool(self.parallel)
+        n = 2
         while True:
             if len(result_list) == len(self.run_dict)-1:
-                pool.apply_async(self.multiz_func, args=(self.maf_list_sort_by_size[0], self.maf_list_sort_by_size[1], str(len(self.maf_list_sort_by_size))+'.maf',), callback=lambda x: result_list.append(x))
+                pool.apply_async(self.multiz_func, args=(self.maf_list_sort_by_size[0], self.maf_list_sort_by_size[1], str(n)+'.maf',), callback=lambda x: result_list.append(x))
                 break
             else:
                 if len(self.maf_list_sort_by_size) <= 1:
                     pass
                 else:
-                    pool.apply_async(self.multiz_func, args=(self.maf_list_sort_by_size[0], self.maf_list_sort_by_size[1], str(len(self.maf_list_sort_by_size))+'.maf',), callback=lambda x: result_list.append(x))
+                    pool.apply_async(self.multiz_func, args=(self.maf_list_sort_by_size[0], self.maf_list_sort_by_size[1], str(n)+'.maf',), callback=lambda x: result_list.append(x))
+                    n += 1
                     self.maf_list_sort_by_size = self.maf_list_sort_by_size[2:]
         pool.close()
         pool.join()
@@ -415,12 +417,14 @@ class Wgap_func(object):
         f.close()
 
         cmd_0 = "last-train -P {} ".format(self.threads) + self.last_train + " " + self.out_dir + "/01_lastdb/" + self.ref_fa + "_db " + self.out_dir + "/00_assembly_fasta/" + name + ".fa"
-        sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sp.PIPE, stderr=sp.PIPE)
-        sp_0.communicate()
+
         with open("{}.mat".format(name), "w") as f:
-            for line in iter(sp_0.stdout.readline, b''):
-                f.write(line.decode('utf-8'))
+            sys.stdout = f
+            sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sys.stdout, stderr=sp.PIPE)
+            sp_0.communicate()
+        sys.stdout.close()
         sp_0.stdout.close()
+        f.close()
 
         # check last-train return code
         if sp_0.returncode == 0:
@@ -449,14 +453,16 @@ class Wgap_func(object):
         cmd_0 = "lastal -P {} ".format(self.threads) + self.lastal + " " + self.out_dir + "/02_last_train/" + name + ".mat " + self.out_dir + "/01_lastdb/" + self.ref_fa + "_db " + self.out_dir + "/00_assembly_fasta/" + name + ".fa "
         cmd_1 = "last-split " + "-f " + "MAF+"
 
-        sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sp.PIPE, stderr=sp.PIPE)
-        sp_1 = sp.Popen(shlex.split(cmd_1), stdin=sp_0.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
-        sp_1.communicate()
+
         with open("{}.maf".format(name), "w", encoding='utf-8') as f:
-            for line in iter(sp_1.stdout.readline, b''):
-                f.write(line.decode('utf-8'))
-        f.close()
+            sys.stdout = f
+            sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sp.PIPE, stderr=sp.PIPE)
+            sp_1 = sp.Popen(shlex.split(cmd_1), stdin=sp_0.stdout, stdout=sys.stdout, stderr=sp.PIPE)
+            sp_1.communicate()
+        sys.stdout.close()
         sp_1.stdout.close()
+        sp_0.stdout.close()
+        f.close()
 
         # check sp_1 return code
         if sp_1.returncode == 0:
@@ -490,21 +496,20 @@ class Wgap_func(object):
         cmd_2 = "maf-swap"
         cmd_3 = "maf-sort"
 
-        sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sp.PIPE, stderr=sp.PIPE)
-        sp_1 = sp.Popen(shlex.split(cmd_1), stdin=sp_0.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
-        sp_2 = sp.Popen(shlex.split(cmd_2), stdin=sp_1.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
-        sp_3 = sp.Popen(shlex.split(cmd_3), stdin=sp_2.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
-        sp_3.communicate()
         with open("{}.maf".format(name), "w", encoding='utf-8') as f:
-            f.write("##maf version=1 scoring=last\n")
-            for line in sp_3.stdout.read().decode('UTF-8').split('\n'):
-                if not line.startswith("#"):
-                    f.write(line + "\n")
-        f.close()
-        sp_0.stdout.close()
-        sp_1.stdout.close()
-        sp_2.stdout.close()
+            sys.stdout = f
+            sys.stdout.write("##maf version=1 scoring=last\n")
+            sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sp.PIPE, stderr=sp.PIPE)
+            sp_1 = sp.Popen(shlex.split(cmd_1), stdin=sp_0.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
+            sp_2 = sp.Popen(shlex.split(cmd_2), stdin=sp_1.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
+            sp_3 = sp.Popen(shlex.split(cmd_3), stdin=sp_2.stdout, stdout=sys.stdout, stderr=sp.PIPE)
+            sp_3.communicate()
+        sys.stdout.close()
         sp_3.stdout.close()
+        sp_2.stdout.close()
+        sp_1.stdout.close()
+        sp_0.stdout.close()
+        f.close()
 
         # check sp_3 return code
         if sp_3.returncode == 0:
@@ -536,17 +541,17 @@ class Wgap_func(object):
         with open("{}.logfile".format(name), "w") as f:
             f.write("\nargparse:{}\n".format(self.args))
             f.write("\nrunning directory:{}{}\n".format(self.out_dir, "/05_multiz/"))
-            f.write("\nrunning command line:multiz {} {} 0 {}_1 {}_2 > {}.maf\n".format(left,right,name,name,name))
+            f.write("\nrunning command line:multiz {} {} 0 {}_1 {}_2 > {}\n".format(left,right,name,name,name))
         f.close()
 
         cmd_0 = "multiz {} {} 0 {}_1 {}_2".format(left,right,name,name)
-        sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sp.PIPE, stderr=sp.PIPE)
-        sp_0.communicate()
-        with open(name, "w", encoding='utf-8') as f:
-            for line in sp_0.stdout.read().decode('UTF-8').split('\n'):
-                f.write(line + "\n")
-        f.close()
+        with open (name,'w',encoding='utf-8') as f:
+            sys.stdout = f
+            sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sys.stdout, stderr=sp.PIPE)
+            sp_0.communicate()
+        sys.stdout.close()
         sp_0.stdout.close()
+        f.close()
 
         # check sp_0 return code
         if sp_0.returncode == 0:
@@ -562,8 +567,6 @@ class Wgap_func(object):
             f.close()
             sp_0.stderr.close()
             return 1
-
-
 
     def maf2lst_fa_func(self):
         maf_file = "{}/05_multiz/{}.maf".format(self.out_dir, len(self.run_dict))

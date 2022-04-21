@@ -359,10 +359,10 @@ class Wgap_func(object):
             f.close()
 
         sp_3 = sp.Popen(shlex.split("samtools faidx {}.fa".format(name)), stdout=sp.PIPE, stderr=sp.PIPE)
+        sp_3.communicate()
         with open("{}.fa.fai".format(name), "w", encoding='utf-8') as f:
             for line in iter(sp_3.stdout.readline, b''):
                 f.write(line.decode('utf-8'))
-        sp_3.communicate()
         sp_3.stdout.close()
 
         if sp_3.returncode == 0:
@@ -418,11 +418,10 @@ class Wgap_func(object):
 
         cmd_0 = "last-train -P {} ".format(self.threads) + self.last_train + " " + self.out_dir + "/01_lastdb/" + self.ref_fa + "_db " + self.out_dir + "/00_assembly_fasta/" + name + ".fa"
 
+        sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sp.PIPE, stderr=sp.PIPE)
+        sp_0.communicate()
         with open("{}.mat".format(name), "w") as f:
-            sys.stdout = f
-            sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sys.stdout, stderr=sp.PIPE)
-            sp_0.communicate()
-        sys.stdout.close()
+            f.write(sp_0.stdout.read().decode('UTF-8'))
         sp_0.stdout.close()
         f.close()
 
@@ -453,13 +452,12 @@ class Wgap_func(object):
         cmd_0 = "lastal -P {} ".format(self.threads) + self.lastal + " " + self.out_dir + "/02_last_train/" + name + ".mat " + self.out_dir + "/01_lastdb/" + self.ref_fa + "_db " + self.out_dir + "/00_assembly_fasta/" + name + ".fa "
         cmd_1 = "last-split " + "-f " + "MAF+"
 
+        sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sp.PIPE, stderr=sp.PIPE)
+        sp_1 = sp.Popen(shlex.split(cmd_1), stdin=sp_0.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
+        sp_1.communicate()
 
         with open("{}.maf".format(name), "w", encoding='utf-8') as f:
-            sys.stdout = f
-            sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sp.PIPE, stderr=sp.PIPE)
-            sp_1 = sp.Popen(shlex.split(cmd_1), stdin=sp_0.stdout, stdout=sys.stdout, stderr=sp.PIPE)
-            sp_1.communicate()
-        sys.stdout.close()
+            f.write(sp_1.stdout.read().decode('UTF-8'))
         sp_1.stdout.close()
         sp_0.stdout.close()
         f.close()
@@ -496,14 +494,15 @@ class Wgap_func(object):
         cmd_2 = "maf-swap"
         cmd_3 = "maf-sort"
 
+        sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sp.PIPE, stderr=sp.PIPE)
+        sp_1 = sp.Popen(shlex.split(cmd_1), stdin=sp_0.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
+        sp_2 = sp.Popen(shlex.split(cmd_2), stdin=sp_1.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
+        sp_3 = sp.Popen(shlex.split(cmd_3), stdin=sp_2.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
+        sp_3.communicate()
+
         with open("{}.maf".format(name), "w", encoding='utf-8') as f:
-            sys.stdout = f
-            sys.stdout.write("##maf version=1 scoring=last\n")
-            sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sp.PIPE, stderr=sp.PIPE)
-            sp_1 = sp.Popen(shlex.split(cmd_1), stdin=sp_0.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
-            sp_2 = sp.Popen(shlex.split(cmd_2), stdin=sp_1.stdout, stdout=sp.PIPE, stderr=sp.PIPE)
-            sp_3 = sp.Popen(shlex.split(cmd_3), stdin=sp_2.stdout, stdout=sys.stdout, stderr=sp.PIPE)
-            sp_3.communicate()
+            f.write("##maf version=1 scoring=last\n")
+            f.write(sp_3.stdout.read().decode('UTF-8'))
         sys.stdout.close()
         sp_3.stdout.close()
         sp_2.stdout.close()
@@ -545,11 +544,11 @@ class Wgap_func(object):
         f.close()
 
         cmd_0 = "multiz {} {} 0 {}_1 {}_2".format(left,right,name,name)
+        sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sp.PIPE, stderr=sp.PIPE)
+        sp_0.communicate()
+
         with open (name,'w',encoding='utf-8') as f:
-            sys.stdout = f
-            sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sys.stdout, stderr=sp.PIPE)
-            sp_0.communicate()
-        sys.stdout.close()
+            f.write(sp_0.stdout.read().decode('UTF-8'))
         sp_0.stdout.close()
         f.close()
 

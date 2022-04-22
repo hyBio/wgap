@@ -545,10 +545,10 @@ class Wgap_func(object):
 
         cmd_0 = "multiz {} {} 0 {}_1 {}_2".format(left,right,name,name)
         sp_0 = sp.Popen(shlex.split(cmd_0), stdout=sp.PIPE, stderr=sp.PIPE)
-        sp_0.communicate()
+        sp_0_output = sp_0.communicate()[0]
 
         with open (name,'w',encoding='utf-8') as f:
-            f.write(sp_0.stdout.read().decode('UTF-8'))
+            f.write(sp_0_output.decode('UTF-8'))
         sp_0.stdout.close()
         f.close()
 
